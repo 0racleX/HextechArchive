@@ -63,7 +63,8 @@ Más detalle (grafo del agente) en [docs/arquitectura.md](docs/arquitectura.md).
    npm install
    npm run dev      # http://localhost:5173
    ```
-7. **Tests del backend:** `cd backend && pip install -r requirements-dev.txt && python -m pytest`.
+7. **Alternativa con Docker:** `docker compose up --build` (con `backend/.env` relleno) levanta solo el backend en `http://localhost:8000`; la imagen ya incluye su propio Ollama con `qwen2.5:3b` y `nomic-embed-text`, así que no hace falta un servicio Ollama aparte.
+8. **Tests del backend:** `cd backend && pip install -r requirements-dev.txt && python -m pytest`.
 
 ## Despliegue
 
@@ -93,8 +94,8 @@ Copiadas de `.env.example`.
 | Variable | Dónde | Descripción | Ejemplo / defecto |
 |---|---|---|---|
 | `DATABASE_URL` | Backend | Conexión Postgres de Supabase (pooler) | `postgresql://postgres.<ref>:<password>@aws-0-<region>.pooler.supabase.com:5432/postgres` |
-| `SUPABASE_JWT_SECRET` | Backend | Secreto para validar JWT (o usar JWKS) | vacío |
-| `SUPABASE_JWKS_URL` | Backend | URL JWKS (alternativa al secreto) | vacío |
+| `SUPABASE_JWT_SECRET` | Backend | Secreto HS256 (solo proyectos con claves heredadas) | vacío |
+| `SUPABASE_JWKS_URL` | Backend | URL JWKS para ES256/RS256: `https://<project-ref>.supabase.co/auth/v1/.well-known/jwks.json` | vacío |
 | `OLLAMA_BASE_URL` | Backend | Servidor Ollama | `http://localhost:11434` |
 | `CHAT_MODEL` | Backend | Modelo de chat | `qwen2.5:3b` |
 | `EMBED_MODEL` | Backend | Modelo de embeddings | `nomic-embed-text` |
@@ -105,6 +106,8 @@ Copiadas de `.env.example`.
 | `VITE_API_URL` | Frontend | URL del backend | `http://localhost:8000` |
 | `VITE_SUPABASE_URL` | Frontend | URL del proyecto Supabase | vacío |
 | `VITE_SUPABASE_ANON_KEY` | Frontend | Clave anónima de Supabase | vacío |
+
+**Qué variable de JWT usar:** en Supabase abre *Project Settings → JWT Keys* (JWT Signing Keys). Si el proyecto firma con **ES256/RS256** (lo habitual en proyectos nuevos) define `SUPABASE_JWKS_URL` y deja `SUPABASE_JWT_SECRET` vacío; si usa el secreto heredado **HS256**, define `SUPABASE_JWT_SECRET`. Síntoma de equivocarse: **todas** las peticiones devuelven 401; diagnostica mirando el `alg` del token (jwt.io) y el log del backend.
 
 ## Capturas
 

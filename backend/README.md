@@ -11,7 +11,7 @@ app_port: 7860
 
 API FastAPI del agente RAG sobre el lore de Runeterra. Capas: `controllers` (HTTP) → `services` → `repositories` (Postgres/pgvector). El agente LangGraph usa Ollama (`qwen2.5:3b` + `nomic-embed-text`) y Supabase (Auth + pgvector).
 
-Endpoints (todos exigen `Authorization: Bearer <JWT de Supabase>` salvo `/health`): `GET /health`, `GET /me`, `POST/GET/DELETE /documents`, y, según avanza el proyecto, `POST /chat` (SSE) y `GET /conversations`.
+Endpoints (todos exigen `Authorization: Bearer <JWT de Supabase>` salvo `/health`): `GET /health`, `GET /me`, `POST /documents` (multipart), `GET /documents`, `DELETE /documents/{id}`, `POST /chat` (streaming SSE: eventos `step`, `token`, `final`, `error`), `GET /conversations` y `GET /conversations/{id}`.
 
 ## Requisitos
 
@@ -39,8 +39,8 @@ cp ../.env.example .env         # y rellenar los valores
 | Variable | Descripción | Valor por defecto / ejemplo |
 |---|---|---|
 | `DATABASE_URL` | Cadena de conexión Postgres de Supabase (pooler) | `postgresql://postgres.<ref>:<password>@aws-0-<region>.pooler.supabase.com:5432/postgres` |
-| `SUPABASE_JWT_SECRET` | Secreto HS256 del proyecto (o usar JWKS) | vacío |
-| `SUPABASE_JWKS_URL` | URL JWKS para validar JWT asimétricos (alternativa al secreto) | vacío |
+| `SUPABASE_JWT_SECRET` | Secreto HS256 del proyecto (solo claves heredadas HS256) | vacío |
+| `SUPABASE_JWKS_URL` | URL JWKS para tokens asimétricos ES256/RS256 (`https://<project-ref>.supabase.co/auth/v1/.well-known/jwks.json`) | vacío |
 | `OLLAMA_BASE_URL` | URL del servidor Ollama | `http://localhost:11434` |
 | `CHAT_MODEL` | Modelo de chat | `qwen2.5:3b` |
 | `EMBED_MODEL` | Modelo de embeddings (768 dim) | `nomic-embed-text` |
@@ -50,6 +50,8 @@ cp ../.env.example .env         # y rellenar los valores
 | `CORS_ORIGINS` | Orígenes permitidos, separados por coma | `http://localhost:5173` |
 
 Se necesita al menos uno de `SUPABASE_JWT_SECRET` o `SUPABASE_JWKS_URL`; sin ninguno la autenticación falla cerrada (rechaza todo).
+
+**Qué variable usar:** abre *Project Settings → JWT Keys* (JWT Signing Keys) en Supabase. Si el proyecto usa claves asimétricas (**ES256/RS256**, lo normal en proyectos nuevos) define `SUPABASE_JWKS_URL` y deja `SUPABASE_JWT_SECRET` vacío; si usa el secreto heredado (**HS256**) define `SUPABASE_JWT_SECRET`. Si solo pones el secreto en un proyecto ES256, **todas** las peticiones devuelven 401. Diagnóstico: mira el `alg` de la cabecera del token (jwt.io) y el log del backend (`Auth misconfigured…` si falta la clave).
 
 ## Ejecutar
 
@@ -74,7 +76,7 @@ Con Ollama y la base de datos disponibles:
 python -m scripts.seed_corpus
 ```
 
-(Descarga campeones y lore de Data Dragon en español, genera embeddings y los guarda como corpus compartido con `user_id` nulo.)
+(Descarga los campeones de Data Dragon (`es_MX`) y las regiones de la wiki de LoL en español en Fandom (`action=parse`), genera embeddings y los guarda como corpus compartido con `user_id` nulo. Termina con código distinto de 0 si algún documento falla; al repetirlo, borra y reintenta los que quedaron en error.)
 
 ## Docker / Hugging Face Space
 
@@ -86,5 +88,7 @@ docker run --rm -p 7860:7860 --env-file .env hextech-backend
 ```
 
 Nota: los modelos se descargan al construir la imagen; cambiar `CHAT_MODEL` o `EMBED_MODEL` exige reconstruir la imagen.
+
+Alternativa local: desde la raíz del repo, `docker compose up --build` construye esta imagen (con su propio Ollama y modelos) y la expone en `http://localhost:8000`, usando `backend/.env`.
 
 Los pasos de despliegue del Space están en el [README raíz](../README.md#despliegue).
