@@ -76,3 +76,21 @@ def test_conversations_are_private(pool):
     assert h.list_conversations(b) == []
     with pool.connection() as conn:
         conn.execute("delete from conversations where id = %s", (cid,))
+
+
+def test_find_shared_only_ready_and_purge_failed_shared(pool):
+    store = VectorStore(pool)
+    name = f"shared-{uuid.uuid4()}.md"
+    bad = store.create_document(None, name, "md")
+    store.set_status(bad, "error", "boom")
+    try:
+        assert store.find_shared(name) is None
+        assert store.purge_failed_shared(name) == 1
+        assert store.purge_failed_shared(name) == 0
+        good = store.create_document(None, name, "md")
+        store.set_status(good, "ready")
+        assert store.find_shared(name) == good
+        assert store.purge_failed_shared(name) == 0  # los ready no se tocan
+    finally:
+        with pool.connection() as conn:
+            conn.execute("delete from documents where user_id is null and name = %s", (name,))

@@ -109,3 +109,63 @@ def test_fetch_region_strips_script_and_style():
 def test_fetch_region_short_or_missing_page_returns_none():
     assert seed_corpus.fetch_region(_region_client({"parse": {"text": {"*": "<p>corto</p>"}}}), "Z") is None
     assert seed_corpus.fetch_region(_region_client({"error": {"code": "missingtitle"}}), "Z") is None
+
+
+# --- Carga de documentos: un ingest fallido cuenta como fallo ---
+
+class _FakeStore:
+    def __init__(self, existing=()):
+        self.existing = set(existing)
+        self.purged = []
+        self.created = []
+
+    def purge_failed_shared(self, name):
+        self.purged.append(name)
+        return 0
+
+    def find_shared(self, name):
+        return "x" if name in self.existing else None
+
+    def create_document(self, user_id, name, type_):
+        self.created.append(name)
+        return f"id-{name}"
+
+
+class _FakeIngestion:
+    def __init__(self, results):
+        self.results = results
+
+    def ingest(self, document_id, filename, data):
+        result = self.results[filename]
+        if isinstance(result, Exception):
+            raise result
+        return result
+
+
+def test_load_documents_counts_failed_ingest_and_not_ok(capsys):
+    store = _FakeStore(existing={"C.md"})
+    ingestion = _FakeIngestion({"A.md": True, "B.md": False, "D.md": RuntimeError("boom")})
+    docs = [("A.md", "a"), ("B.md", "b"), ("C.md", "c"), ("D.md", "d")]
+    ok, skipped, failed = seed_corpus.load_documents(store, ingestion, docs)
+    out = capsys.readouterr().out
+    assert (ok, skipped, failed) == (1, 1, 2)
+    assert "OK A.md" in out and "OK B.md" not in out
+    assert "FAIL B.md: ingest ended in error" in out
+    assert store.purged == ["A.md", "B.md", "C.md", "D.md"]
+
+
+def test_main_exits_nonzero_when_ingest_fails(monkeypatch):
+    import sys
+    import types
+
+    store, ingestion = _FakeStore(), _FakeIngestion({"Region-Zaun.md": False})
+    monkeypatch.setitem(sys.modules, "app.deps", types.SimpleNamespace(
+        get_vector_store=lambda: store, get_ingestion=lambda: ingestion))
+    monkeypatch.setattr(seed_corpus, "fetch_champions", lambda client: ({}, []))
+    monkeypatch.setattr(seed_corpus, "fetch_region", lambda client, title: "texto" if title == "Zaun" else None)
+    monkeypatch.setattr(seed_corpus, "REGIONS", ["Zaun"])
+    monkeypatch.setattr(seed_corpus, "DEMO_DIR", seed_corpus.Path(__file__).parent)
+    monkeypatch.setattr(sys, "argv", ["seed_corpus"])
+    with pytest.raises(SystemExit) as exc:
+        seed_corpus.main()
+    assert exc.value.code == 1

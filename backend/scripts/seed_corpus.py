@@ -91,6 +91,31 @@ def fetch_region(client: httpx.Client, title: str) -> str | None:
     return f"# {title}\n\n{text}" if len(text) > 200 else None
 
 
+def load_documents(store, ingestion, docs: list[tuple[str, str]]) -> tuple[int, int, int]:
+    """Ingesta cada documento compartido. Devuelve (ok, skipped, failed)."""
+    ok = skipped = failed = 0
+    for name, text in docs:
+        store.purge_failed_shared(name)  # un intento previo fallido no debe saltarse para siempre
+        if store.find_shared(name):
+            print(f"SKIP {name} (ya existe)")
+            skipped += 1
+            continue
+        try:
+            doc_id = store.create_document(None, name, "md")
+            ready = ingestion.ingest(doc_id, name, text.encode("utf-8"))
+        except Exception as exc:  # un documento malo no debe abortar la carga
+            print(f"FAIL {name}: {exc!r}")
+            failed += 1
+            continue
+        if not ready:
+            print(f"FAIL {name}: ingest ended in error")
+            failed += 1
+            continue
+        print(f"OK {name}")
+        ok += 1
+    return ok, skipped, failed
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--holdout", default="Briar,Hwei",
@@ -134,20 +159,9 @@ def main() -> None:
                 continue
             docs.append((f"Region-{title}.md", text))
 
-    for name, text in docs:
-        if store.find_shared(name):
-            print(f"SKIP {name} (ya existe)")
-            skipped += 1
-            continue
-        try:
-            doc_id = store.create_document(None, name, "md")
-            ingestion.ingest(doc_id, name, text.encode("utf-8"))
-        except Exception as exc:  # un documento malo no debe abortar la carga
-            print(f"FAIL {name}: {exc!r}")
-            failed += 1
-            continue
-        print(f"OK {name}")
-        ok += 1
+    o, skipped, f = load_documents(store, ingestion, docs)
+    ok += o
+    failed += f
 
     print(f"ok={ok} skipped={skipped} failed={failed} missing={missing}")
     if failed:

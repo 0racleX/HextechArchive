@@ -30,7 +30,7 @@ class BrokenEmbedder:
 
 def test_ingest_text_marks_ready():
     store = FakeStore()
-    IngestionService(store, FakeEmbedder()).ingest("d1", "a.txt", ("Jinx " * 300).encode())
+    assert IngestionService(store, FakeEmbedder()).ingest("d1", "a.txt", ("Jinx " * 300).encode()) is True
     assert store.status["d1"] == ("ready", None)
     assert store.chunks and store.chunks[0][0] == "d1"
 
@@ -41,7 +41,7 @@ def test_ingest_blank_pdf_marks_error_without_chunks():
     writer.add_blank_page(width=72, height=72)
     writer.write(buf)
     store = FakeStore()
-    IngestionService(store, FakeEmbedder()).ingest("d2", "scan.pdf", buf.getvalue())
+    assert IngestionService(store, FakeEmbedder()).ingest("d2", "scan.pdf", buf.getvalue()) is False
     status, error = store.status["d2"]
     assert status == "error"
     assert "texto" in error.lower()
@@ -50,5 +50,5 @@ def test_ingest_blank_pdf_marks_error_without_chunks():
 
 def test_ingest_embedder_failure_marks_error():
     store = FakeStore()
-    IngestionService(store, BrokenEmbedder()).ingest("d3", "a.txt", b"contenido valido")
+    assert IngestionService(store, BrokenEmbedder()).ingest("d3", "a.txt", b"contenido valido") is False
     assert store.status["d3"][0] == "error"

@@ -84,6 +84,16 @@ class VectorStore:
     def find_shared(self, name: str) -> str | None:
         with self.pool.connection() as conn:
             row = conn.execute(
-                "select id from documents where user_id is null and name = %s", (name,)
+                "select id from documents where user_id is null and name = %s and status = 'ready'",
+                (name,),
             ).fetchone()
         return str(row["id"]) if row else None
+
+    def purge_failed_shared(self, name: str) -> int:
+        """Borra documentos compartidos con ese nombre que no están 'ready' (los chunks caen en cascada)."""
+        with self.pool.connection() as conn:
+            rows = conn.execute(
+                "delete from documents where user_id is null and name = %s and status <> 'ready' returning id",
+                (name,),
+            ).fetchall()
+        return len(rows)
