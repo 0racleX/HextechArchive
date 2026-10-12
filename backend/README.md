@@ -85,4 +85,6 @@ docker build -t hextech-backend .
 docker run --rm -p 7860:7860 --env-file .env hextech-backend
 ```
 
+Nota: los modelos se descargan al construir la imagen; cambiar `CHAT_MODEL` o `EMBED_MODEL` exige reconstruir la imagen.
+
 Los pasos de despliegue del Space están en el [README raíz](../README.md#despliegue).

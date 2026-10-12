@@ -12,7 +12,14 @@ ENV OLLAMA_MODELS=/opt/ollama-models \
 
 # Descargar los modelos durante el build para que el arranque sea rápido
 RUN mkdir -p $OLLAMA_MODELS \
-    && (ollama serve & sleep 6 && ollama pull qwen2.5:3b && ollama pull nomic-embed-text && sleep 2) \
+    && (ollama serve & \
+        ready=0; \
+        for i in $(seq 1 60); do \
+          if curl -sf http://127.0.0.1:11434/api/tags >/dev/null; then ready=1; break; fi; \
+          sleep 1; \
+        done; \
+        [ "$ready" = "1" ] || { echo "Ollama no arranco durante el build" >&2; exit 1; }; \
+        ollama pull qwen2.5:3b && ollama pull nomic-embed-text && sleep 2) \
     && chmod -R a+rwX $OLLAMA_MODELS
 
 WORKDIR /app

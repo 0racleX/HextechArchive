@@ -82,7 +82,7 @@ Aristas condicionales: tras `validate_intent` (a `retrieve` o `refuse`) y tras `
 
 ## 8. Modelo local y base vectorial
 
-**Modelo local.** Se eligió `qwen2.5:3b` por su buen rendimiento en español con un tamaño que cabe y corre en CPU (el hardware de desarrollo no tiene GPU dedicada y el Space free dispone de CPU y 16 GB de RAM). Ollama corre dentro del mismo contenedor que la API; los modelos (`qwen2.5:3b`, `nomic-embed-text`) se descargan durante el build de la imagen y `start.sh` arranca Ollama, calienta el modelo y lanza uvicorn en el puerto 7860. Alternativa documentada: `llama3.2:3b`.
+**Modelo local.** Se eligió `qwen2.5:3b` por su buen rendimiento en español con un tamaño que cabe y corre en CPU (el hardware de desarrollo no tiene GPU dedicada y el Space free dispone de CPU y 16 GB de RAM). Ollama corre dentro del mismo contenedor que la API; los modelos (`qwen2.5:3b`, `nomic-embed-text`) se descargan durante el build de la imagen y `start.sh` arranca Ollama, calienta el modelo y lanza uvicorn en el puerto 7860. Alternativa documentada: `llama3.2:3b`. Los modelos se descargan al construir la imagen, por lo que cambiar `CHAT_MODEL` exige reconstruir la imagen (rebuild del Space).
 
 Limitaciones en CPU: la inferencia es lenta (riesgo estimado de 20-40 s por respuesta en CPU compartida). Mitigaciones: streaming SSE, `num_ctx` reducido, `top_k` pequeño, `OLLAMA_KEEP_ALIVE=24h`, `OLLAMA_NUM_PARALLEL=1` y calentamiento del modelo al arrancar. **PENDIENTE:** tokens/s medidos en local y en el Space; latencia de la primera respuesta y de las siguientes.
 
@@ -108,7 +108,7 @@ Se implementan cuatro (el PDF pide al menos dos):
 3. **Prompt restrictivo**: solo el contexto recuperado, sin conocimiento externo, en español.
 4. **Rechazo literal y fuentes visibles**: mensaje fijo de rechazo y fragmentos/fuentes citados en cada respuesta, de modo que el usuario puede verificarlos.
 
-## 11. Seguridad
+## 11. Seguridad y autenticación
 
 - **Autenticación:** Supabase Auth; el frontend obtiene el JWT.
 - **Validación del JWT** en el backend: firma (secreto o JWKS), expiración y audiencia; si no hay clave configurada, la validación falla cerrada. Todos los endpoints salvo `/health` la exigen.
@@ -135,7 +135,7 @@ Problemas esperados/riesgos de diseño: latencia del modelo 3B en CPU (mitigada 
 
 Conclusiones: un grafo explícito con validación de intención y evaluación del contexto permite que un modelo pequeño y local responda de forma fiable y rechace cuando no sabe; pgvector en Supabase simplifica la infraestructura. Trabajo futuro: ingesta multimedia (JPG/MP4/MP3), roles de administrador, moderación avanzada del contenido subido.
 
-## Atribución de fuentes
+### Atribución de fuentes
 
 - Datos de campeones: **Data Dragon** (Riot Games).
 - Textos de la wiki de League of Legends en **Fandom**, licencia CC BY-SA.

@@ -77,6 +77,7 @@ Más detalle (grafo del agente) en [docs/arquitectura.md](docs/arquitectura.md).
    git subtree push --prefix backend space main
    ```
    Si rechaza por historial divergente: ``git push space `git subtree split --prefix backend main`:main --force``.
+   Nota: los modelos se descargan al construir la imagen; cambiar `CHAT_MODEL` o `EMBED_MODEL` exige reconstruir la imagen.
 4. Esperar el build (10-20 min la primera vez; descarga los modelos). Comprobar `curl https://<usuario>-hextech-archive.hf.space/health` → `{"status":"ok"}`.
 
 ### Frontend en Vercel
