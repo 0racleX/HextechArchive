@@ -2,6 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import get_settings
+from app.controllers import me
 
 app = FastAPI(title="Hextech Archive API")
 
@@ -12,6 +13,9 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+app.include_router(me.router)
 
 
 @app.get("/health")
