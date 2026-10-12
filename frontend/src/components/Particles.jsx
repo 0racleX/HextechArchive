@@ -31,5 +31,5 @@ export default function Particles() {
     return () => { cancelAnimationFrame(raf); removeEventListener("resize", resize); };
   }, []);
 
-  return <canvas ref={ref} aria-hidden className="pointer-events-none fixed inset-0 -z-0" />;
+  return <canvas ref={ref} aria-hidden className="pointer-events-none fixed inset-0" />;
 }

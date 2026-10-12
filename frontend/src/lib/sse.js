@@ -1,8 +1,14 @@
 export function parseSSE(buffer) {
-  const parts = buffer.split("\n\n");
+  const parts = buffer.replace(/\r\n/g, "\n").split("\n\n");
   const rest = parts.pop() ?? "";
-  const events = parts
-    .filter((p) => p.startsWith("data: "))
-    .map((p) => JSON.parse(p.slice(6)));
+  const events = [];
+  for (const p of parts) {
+    if (!p.startsWith("data: ")) continue;
+    try {
+      events.push(JSON.parse(p.slice(6)));
+    } catch {
+      // skip malformed block
+    }
+  }
   return { events, rest };
 }

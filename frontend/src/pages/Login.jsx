@@ -23,10 +23,15 @@ export default function Login() {
     if (!EMAIL_RE.test(email)) return setError("Ingresa un correo válido.");
     if (password.length < 8) return setError("La contraseña debe tener al menos 8 caracteres.");
     setBusy(true);
-    const { data, error: err } = mode === "login" ? await signIn(email, password) : await signUp(email, password);
-    setBusy(false);
-    if (err) return setError(err.message);
-    if (mode === "register" && !data.session) setInfo("Cuenta creada. Revisa tu correo para confirmarla.");
+    try {
+      const { data, error: err } = mode === "login" ? await signIn(email, password) : await signUp(email, password);
+      if (err) return setError(err.message);
+      if (mode === "register" && !data.session) setInfo("Cuenta creada. Revisa tu correo para confirmarla.");
+    } catch (ex) {
+      setError(ex?.message || "No se pudo conectar. Inténtalo de nuevo.");
+    } finally {
+      setBusy(false);
+    }
   }
 
   return (

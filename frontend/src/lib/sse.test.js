@@ -20,4 +20,15 @@ describe("parseSSE", () => {
     const { events } = parseSSE(': keep-alive\n\ndata: {"type":"step","node":"retrieve"}\n\n');
     expect(events).toEqual([{ type: "step", node: "retrieve" }]);
   });
+
+  it("parses CRLF-delimited events", () => {
+    const { events, rest } = parseSSE('data: {"type":"token","text":"a"}\r\n\r\ndata: {"type":"fi');
+    expect(events).toEqual([{ type: "token", text: "a" }]);
+    expect(rest).toBe('data: {"type":"fi');
+  });
+
+  it("skips malformed data blocks instead of throwing", () => {
+    const { events } = parseSSE('data: {bad\n\ndata: {"type":"done"}\n\n');
+    expect(events).toEqual([{ type: "done" }]);
+  });
 });
