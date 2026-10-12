@@ -1,5 +1,7 @@
 import json
 import logging
+import queue
+import threading
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -11,6 +13,10 @@ from app.security.auth import CurrentUser, get_current_user
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/chat", tags=["chat"])
+
+HEARTBEAT_SECONDS = 10  # sin eventos durante este tiempo se emite un comentario SSE ": ping"
+_QUEUE_SIZE = 256
+_DONE = object()
 
 
 class ChatRequest(BaseModel):
@@ -40,9 +46,42 @@ def chat(
 
     def stream():
         final: dict = {}
-        try:
+        q: queue.Queue = queue.Queue(maxsize=_QUEUE_SIZE)
+        stop = threading.Event()  # se activa si el cliente se desconecta
+
+        def put(item) -> bool:
+            while not stop.is_set():
+                try:
+                    q.put(item, timeout=0.5)
+                    return True
+                except queue.Full:
+                    continue
+            return False
+
+        def worker():
             init = {"question": body.question, "user_id": user.id, "conversation_id": conversation_id}
-            for mode, payload in agent.stream(init, stream_mode=["updates", "custom"]):
+            try:
+                for item in agent.stream(init, stream_mode=["updates", "custom"]):
+                    if not put(("item", item)):
+                        return
+            except Exception as exc:
+                put(("error", exc))
+            finally:
+                put((_DONE, None))
+
+        threading.Thread(target=worker, daemon=True).start()
+        try:
+            while True:
+                try:
+                    kind, value = q.get(timeout=HEARTBEAT_SECONDS)
+                except queue.Empty:
+                    yield ": ping\n\n"  # latido: mantiene viva la conexión durante inferencias lentas
+                    continue
+                if kind is _DONE:
+                    break
+                if kind == "error":
+                    raise value
+                mode, payload = value
                 if mode == "custom":
                     yield _sse({"type": "token", "text": payload["token"]})
                 else:
@@ -65,6 +104,8 @@ def chat(
                 except Exception:
                     logger.exception("No se pudo limpiar la conversación vacía")
             yield _sse({"type": "error", "message": "El agente no pudo responder en este momento. Intenta de nuevo en unos segundos."})
+        finally:
+            stop.set()
 
     return StreamingResponse(
         stream(), media_type="text/event-stream",

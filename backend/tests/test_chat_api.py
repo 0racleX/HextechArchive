@@ -176,3 +176,65 @@ def test_cleanup_failure_does_not_mask_error_event(client, history):
     r = client.post("/chat", json={"question": "¿Quién es Jinx?"}, headers=headers())
     last = sse_events(r)[-1]
     assert last["type"] == "error" and "db down" not in r.text
+
+
+def test_slow_agent_emits_ping_heartbeats_before_final(client, history, monkeypatch):
+    import time
+
+    from app.controllers import chat as chat_module
+
+    class SlowLLM(FakeLLM):
+        def invoke(self, prompt):
+            time.sleep(0.25)
+            return super().invoke(prompt)
+
+    monkeypatch.setattr(chat_module, "HEARTBEAT_SECONDS", 0.05)
+    install_agent(history, SlowLLM(["SI", "Jinx es una criminal de Zaun [1]."]), GOOD)
+    r = client.post("/chat", json={"question": "¿Quién es Jinx?"}, headers=headers())
+    assert r.status_code == 200
+    assert r.text.count(": ping\n\n") >= 1
+    assert r.text.index(": ping") < r.text.index('"type": "final"')
+    events = sse_events(r)
+    assert events[-1]["type"] == "final" and events[-1]["refused"] is False
+
+
+def test_worker_error_still_yields_single_error_event_with_heartbeats(client, history, monkeypatch):
+    from app.controllers import chat as chat_module
+
+    monkeypatch.setattr(chat_module, "HEARTBEAT_SECONDS", 0.05)
+    install_agent(history, _DownLLM(), GOOD)
+    r = client.post("/chat", json={"question": "¿Quién es Jinx?"}, headers=headers())
+    events = sse_events(r)
+    assert [e["type"] for e in events].count("error") == 1 and events[-1]["type"] == "error"
+    assert client.get("/conversations", headers=headers()).json() == []
+
+
+def test_client_disconnect_stops_worker_thread(history):
+    import asyncio
+    import threading
+    import time
+
+    from app.controllers import chat as chat_module
+    from app.security.auth import CurrentUser
+
+    class EndlessAgent:
+        def stream(self, init, stream_mode):
+            while True:
+                yield ("custom", {"token": "x"})
+
+    body = chat_module.ChatRequest(question="¿Quién es Jinx?")
+    response = chat_module.chat(body, CurrentUser("user-a", None), EndlessAgent(), history)
+    gen = response.body_iterator
+
+    async def drive():
+        first = await gen.__anext__()
+        assert first.startswith("data: ")
+        before = threading.active_count()
+        await gen.aclose()  # el cliente se desconecta
+        return before
+
+    before = asyncio.run(drive())
+    deadline = time.time() + 5
+    while threading.active_count() >= before and time.time() < deadline:
+        time.sleep(0.05)
+    assert threading.active_count() < before
