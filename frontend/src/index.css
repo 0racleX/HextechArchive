@@ -1,0 +1,101 @@
+@import "tailwindcss";
+
+@theme {
+  --color-abyss: #010a13;
+  --color-deep: #0a1428;
+  --color-panel: #0b1b2e;
+  --color-gold: #c8aa6e;
+  --color-gold-hi: #f0e6d2;
+  --color-hex: #0ac8b9;
+  --color-ember: #c8464a;
+  --color-ink: #a09b8c;
+  --font-display: "Cinzel", serif;
+  --font-body: "Cormorant Garamond", serif;
+  --font-mono: "JetBrains Mono", monospace;
+}
+
+html, body, #root { min-height: 100%; }
+body {
+  margin: 0;
+  background:
+    radial-gradient(1200px 600px at 50% -10%, rgba(10, 200, 185, 0.10), transparent 60%),
+    radial-gradient(800px 500px at 100% 100%, rgba(200, 170, 110, 0.08), transparent 60%),
+    var(--color-abyss);
+  color: var(--color-gold-hi);
+  font-family: var(--font-body);
+  font-size: 1.2rem;
+  line-height: 1.55;
+}
+h1, h2, h3 { font-family: var(--font-display); letter-spacing: 0.08em; color: var(--color-gold); }
+
+/* Marco ornamental con esquinas doradas */
+.frame {
+  position: relative;
+  background: linear-gradient(180deg, rgba(11, 27, 46, 0.92), rgba(1, 10, 19, 0.92));
+  border: 1px solid rgba(200, 170, 110, 0.35);
+  box-shadow: 0 0 40px rgba(10, 200, 185, 0.06) inset, 0 10px 40px rgba(0, 0, 0, 0.5);
+}
+.frame::before, .frame::after {
+  content: "";
+  position: absolute;
+  width: 18px; height: 18px;
+  border: 2px solid var(--color-gold);
+  pointer-events: none;
+}
+.frame::before { top: -2px; left: -2px; border-right: 0; border-bottom: 0; }
+.frame::after { bottom: -2px; right: -2px; border-left: 0; border-top: 0; }
+
+.btn-gold {
+  font-family: var(--font-display);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  font-size: 0.85rem;
+  color: var(--color-abyss);
+  background: linear-gradient(180deg, #f0e6d2, #c8aa6e 60%, #a98a4d);
+  padding: 0.7rem 1.4rem;
+  border: 1px solid #f0e6d2;
+  cursor: pointer;
+  transition: box-shadow 0.25s, transform 0.15s, filter 0.2s;
+}
+.btn-gold:hover:not(:disabled) { box-shadow: 0 0 22px rgba(10, 200, 185, 0.55); transform: translateY(-1px); }
+.btn-gold:disabled { filter: grayscale(0.7) brightness(0.7); cursor: not-allowed; }
+.btn-ghost {
+  font-family: var(--font-display);
+  letter-spacing: 0.1em;
+  font-size: 0.8rem;
+  color: var(--color-gold);
+  background: transparent;
+  border: 1px solid rgba(200, 170, 110, 0.5);
+  padding: 0.5rem 1rem;
+  cursor: pointer;
+  transition: border-color 0.2s, color 0.2s;
+}
+.btn-ghost:hover { border-color: var(--color-hex); color: var(--color-hex); }
+
+.field {
+  width: 100%;
+  background: rgba(1, 10, 19, 0.8);
+  border: 1px solid rgba(200, 170, 110, 0.35);
+  color: var(--color-gold-hi);
+  padding: 0.7rem 0.9rem;
+  font-family: var(--font-body);
+  font-size: 1.1rem;
+}
+.field:focus { outline: 2px solid var(--color-hex); outline-offset: 1px; }
+
+.rune {
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  color: var(--color-hex);
+  border: 1px solid rgba(10, 200, 185, 0.4);
+  padding: 0.15rem 0.5rem;
+  background: rgba(10, 200, 185, 0.07);
+}
+.glow-pulse { animation: glow 1.6s ease-in-out infinite; }
+@keyframes glow {
+  0%, 100% { box-shadow: 0 0 6px rgba(10, 200, 185, 0.25); }
+  50% { box-shadow: 0 0 24px rgba(10, 200, 185, 0.7); }
+}
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation: none !important; transition: none !important; }
+}
