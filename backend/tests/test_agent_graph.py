@@ -126,3 +126,10 @@ def test_no_info_anywhere_in_answer_is_refusal():
     state, _ = run("¿Quién es Jinx?", [chunk(0.9)], llm)
     assert state["refused"] is True and state["sources"] == []
     assert state["answer"].startswith(prompts.REFUSAL_MESSAGE)
+
+
+@pytest.mark.parametrize("text", ["Buenos días", "buenos días!", "Buenas tardes", "Gracias"])
+def test_accented_greetings_are_detected(text):
+    llm = FakeLLM()
+    state, _ = run(text, [chunk(0.9)], llm)
+    assert state["answer"] == prompts.GREETING_MESSAGE and llm.calls == 0

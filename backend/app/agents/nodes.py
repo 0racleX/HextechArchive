@@ -9,6 +9,10 @@ from app.agents import prompts
 GREETING = re.compile(r"^\s*(hola|buenas|buenos dias|buenas tardes|buenas noches|hey|hi|gracias)\b", re.I)
 
 
+def _strip_accents(text: str) -> str:
+    return "".join(ch for ch in unicodedata.normalize("NFD", text) if unicodedata.category(ch) != "Mn")
+
+
 def _norm(text: str) -> str:
     return unicodedata.normalize("NFD", text).encode("ascii", "ignore").decode().strip().upper()
 
@@ -22,9 +26,10 @@ def make_nodes(retriever, llm, save_history, threshold: float) -> SimpleNamespac
         q = state["question"].strip()
         if len(q) < 3 or not re.search(r"\w{2}", q):
             return {"intent": "invalid"}
-        m = GREETING.match(q)
+        plain = _strip_accents(q)  # "buenos días" -> "buenos dias" (misma longitud, mismos índices)
+        m = GREETING.match(plain)
         if m:
-            rest = re.sub(r"[^\w\s]", " ", q[m.end():])
+            rest = re.sub(r"[^\w\s]", " ", plain[m.end():])
             if "?" not in q and "¿" not in q and len(rest.split()) <= 2:
                 return {"intent": "greeting"}
         return {"intent": "ok"}
