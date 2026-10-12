@@ -63,7 +63,7 @@ export default function Documents() {
             {d.shared && <span className="rune">corpus base</span>}
             <span className={`rune ${BADGE[d.status]}`}>{LABEL[d.status]}</span>
             {d.status === "error" && <span className="w-full text-sm text-ember">{d.error}</span>}
-            {!d.shared && <button className="btn-ghost" onClick={() => remove(d.id)}>Eliminar</button>}
+            {!d.shared && <button className="btn-ghost" aria-label={`Eliminar ${d.name}`} onClick={() => remove(d.id)}>Eliminar</button>}
           </li>
         ))}
       </ul>

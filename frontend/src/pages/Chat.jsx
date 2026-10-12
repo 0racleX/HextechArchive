@@ -15,44 +15,64 @@ export default function Chat() {
   const conversationId = params.get("c");
   const bottom = useRef(null);
 
+  const justCreated = useRef(null);
+  const token = useRef(0);
+
   useEffect(() => {
+    if (conversationId && conversationId === justCreated.current) {
+      justCreated.current = null; // id set by this component after streaming: keep messages
+      return;
+    }
+    token.current += 1; // invalidates any in-flight stream for the previous conversation
+    setBusy(false);
     setError("");
-    if (!conversationId) return setMessages([]);
+    if (!conversationId) { setMessages([]); return; }
+    let ignore = false;
     api(`/conversations/${conversationId}`)
-      .then((c) => setMessages(c.messages.map((m) => ({ ...m, sources: m.sources || [] }))))
-      .catch((e) => setError(e.message));
+      .then((c) => { if (!ignore) setMessages(c.messages.map((m) => ({ ...m, sources: m.sources || [] }))); })
+      .catch((e) => { if (!ignore) setError(e.message); });
+    return () => { ignore = true; };
   }, [conversationId]);
 
-  useEffect(() => bottom.current?.scrollIntoView({ behavior: "smooth" }), [messages]);
+  useEffect(() => {
+    const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    bottom.current?.scrollIntoView({ behavior: reduce ? "auto" : "smooth" });
+  }, [messages]);
 
   async function send(text) {
     const question = text.trim();
     if (!question || busy) return;
     if (question.length > 1000) return setError("La pregunta no puede superar 1000 caracteres.");
     setError(""); setInput(""); setBusy(true);
+    const mine = ++token.current;
+    const stale = () => token.current !== mine;
     setMessages((m) => [...m, { role: "user", content: question }, { role: "assistant", content: "", pending: true }]);
     const patchLast = (patch) => setMessages((m) => m.map((x, i) => (i === m.length - 1 ? { ...x, ...patch } : x)));
+    const dropPending = () => setMessages((m) => m.filter((x) => !x.pending));
     let streamed = "";
+    let done = false;
     try {
       await streamChat(question, conversationId, (ev) => {
+        if (stale()) return;
         if (ev.type === "token") { streamed += ev.text; patchLast({ content: streamed }); }
         if (ev.type === "final") {
+          done = true;
           patchLast({ content: ev.answer, sources: ev.sources, refused: ev.refused, pending: false });
-          if (!conversationId) setParams({ c: ev.conversation_id }, { replace: true });
+          if (!conversationId) { justCreated.current = ev.conversation_id; setParams({ c: ev.conversation_id }, { replace: true }); }
         }
-        if (ev.type === "error") { setError(ev.message); setMessages((m) => m.filter((x) => !x.pending)); }
+        if (ev.type === "error") { done = true; setError(ev.message); dropPending(); }
       });
+      if (!done && !stale()) { setError("La conexión se cerró antes de recibir respuesta."); dropPending(); }
     } catch (e) {
-      setError(e.message);
-      setMessages((m) => m.filter((x) => !x.pending));
+      if (!stale()) { setError(e.message); dropPending(); }
     } finally {
-      setBusy(false);
+      if (!stale()) setBusy(false);
     }
   }
 
   return (
     <Frame className="flex h-[calc(100vh-150px)] min-h-[420px] flex-col">
-      <div className="flex-1 space-y-4 overflow-y-auto p-5" aria-live="polite">
+      <div className="flex-1 space-y-4 overflow-y-auto p-5" aria-live="polite" aria-busy={busy}>
         {messages.length === 0 && (
           <div className="grid h-full place-items-center text-center">
             <div>
