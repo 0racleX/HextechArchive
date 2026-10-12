@@ -61,7 +61,7 @@ def _forged_hs256(secret: bytes, **extra) -> str:
 
 def test_me_fails_closed_without_any_key_configured(client):
     app.dependency_overrides[get_settings] = lambda: Settings(
-        supabase_jwt_secret="", supabase_jwks_url=""
+        _env_file=None, supabase_jwt_secret="", supabase_jwks_url=""
     )
     r = client.get("/me", headers={"Authorization": f"Bearer {_forged_hs256(b'')}"})
     assert r.status_code == 401
@@ -96,7 +96,7 @@ def jwks(monkeypatch):
 
     auth._jwks_client.cache_clear()
     monkeypatch.setattr(auth, "_jwks_client", lambda url: FakeClient())
-    app.dependency_overrides[get_settings] = lambda: Settings(supabase_jwks_url="https://x.test/jwks")
+    app.dependency_overrides[get_settings] = lambda: Settings(_env_file=None, supabase_jwks_url="https://x.test/jwks")
     return private
 
 
