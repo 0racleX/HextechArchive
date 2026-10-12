@@ -1,3 +1,4 @@
+import logging
 from dataclasses import dataclass
 from functools import lru_cache
 
@@ -9,6 +10,8 @@ from jwt import PyJWKClient
 from app.config import Settings, get_settings
 
 bearer = HTTPBearer(auto_error=False)
+logger = logging.getLogger(__name__)
+_warned_misconfig = False
 
 
 @dataclass(frozen=True)
@@ -28,6 +31,12 @@ def decode_token(token: str, settings: Settings) -> dict:
         algorithms = ["ES256", "RS256"]
     else:
         key = settings.supabase_jwt_secret
+        if not key:
+            global _warned_misconfig
+            if not _warned_misconfig:
+                _warned_misconfig = True
+                logger.error("Auth misconfigured: neither SUPABASE_JWKS_URL nor SUPABASE_JWT_SECRET is set; rejecting all tokens")
+            raise jwt.InvalidKeyError("Authentication is not configured")
         algorithms = ["HS256"]
     return jwt.decode(
         token,
@@ -51,5 +60,5 @@ def get_current_user(
     try:
         claims = decode_token(creds.credentials, settings)
     except jwt.PyJWTError:
-        raise _unauthorized("Token inválido o expirado")
+        raise _unauthorized("Token inválido o expirado") from None
     return CurrentUser(id=claims["sub"], email=claims.get("email"))
