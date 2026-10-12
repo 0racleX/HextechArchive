@@ -64,7 +64,7 @@ curl http://localhost:8000/health        # {"status":"ok"}
 python -m pytest
 ```
 
-Los tests usan dobles de prueba (LLM/embeddings falsos); `test_repositories_integration.py` requiere una base Postgres real con pgvector y se omite si no está configurada.
+Los tests usan dobles de prueba (LLM/embeddings falsos); `test_repositories_integration.py` requiere una base Postgres real con pgvector y se omite si no se define `TEST_DATABASE_URL`.
 
 ## Cargar el corpus base
 
