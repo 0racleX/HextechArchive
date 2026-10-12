@@ -1,7 +1,8 @@
 import { supabase } from "./supabase";
+import { normalizeBase } from "./baseUrl";
 import { parseSSE } from "./sse";
 
-const BASE = import.meta.env.VITE_API_URL;
+const BASE = normalizeBase(import.meta.env.VITE_API_URL);
 
 async function authHeaders() {
   const { data } = await supabase.auth.getSession();

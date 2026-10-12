@@ -21,6 +21,12 @@ describe("parseSSE", () => {
     expect(events).toEqual([{ type: "step", node: "retrieve" }]);
   });
 
+  it("ignores ': ping' heartbeat blocks between events", () => {
+    const { events, rest } = parseSSE(': ping\n\ndata: {"type":"token","text":"a"}\n\n: ping\n\n');
+    expect(events).toEqual([{ type: "token", text: "a" }]);
+    expect(rest).toBe("");
+  });
+
   it("parses CRLF-delimited events", () => {
     const { events, rest } = parseSSE('data: {"type":"token","text":"a"}\r\n\r\ndata: {"type":"fi');
     expect(events).toEqual([{ type: "token", text: "a" }]);
