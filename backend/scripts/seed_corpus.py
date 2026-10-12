@@ -2,6 +2,7 @@
 import argparse
 import html
 import re
+import sys
 import time
 from pathlib import Path
 
@@ -10,11 +11,14 @@ import httpx
 DDRAGON = "https://ddragon.leagueoflegends.com"
 LOCALE = "es_MX"
 WIKI_API = "https://leagueoflegends.fandom.com/es/api.php"
+USER_AGENT = "HextechArchive/0.1 (educational project)"
 REGIONS = [
     "Demacia", "Noxus", "Piltóver", "Zaun", "Freljord", "Jonia", "Islas de la Sombra",
     "Targon", "Shurima", "Aguas Estancadas", "Ixtal", "El Vacío", "Bandle City",
 ]
 DEMO_DIR = Path(__file__).resolve().parents[1] / "demo_docs"
+MAX_ATTEMPTS = 3
+FETCH_ERRORS = (httpx.HTTPError, ValueError, KeyError)
 
 
 def strip_html(text: str) -> str:
@@ -42,22 +46,44 @@ def champion_markdown(c: dict) -> str:
     return "\n\n".join(lines)
 
 
-def fetch_champions(client: httpx.Client) -> dict[str, dict]:
-    version = client.get(f"{DDRAGON}/api/versions.json").json()[0]
-    index = client.get(f"{DDRAGON}/cdn/{version}/data/{LOCALE}/champion.json").json()["data"]
-    out = {}
+def get_json(client: httpx.Client, url: str, params: dict | None = None):
+    """GET con raise_for_status y hasta 3 intentos (backoff 1s, 2s) para 429/5xx/errores de red."""
+    for attempt in range(1, MAX_ATTEMPTS + 1):
+        try:
+            response = client.get(url, params=params)
+            response.raise_for_status()
+            return response.json()
+        except (httpx.TransportError, httpx.HTTPStatusError) as exc:
+            retryable = isinstance(exc, httpx.TransportError) or (
+                exc.response.status_code == 429 or exc.response.status_code >= 500
+            )
+            if not retryable or attempt == MAX_ATTEMPTS:
+                raise
+            time.sleep(attempt)
+
+
+def fetch_champions(client: httpx.Client) -> tuple[dict[str, dict], list[str]]:
+    """Devuelve (campeones obtenidos, ids fallidos). Fallar en versions/index es fatal."""
+    version = get_json(client, f"{DDRAGON}/api/versions.json")[0]
+    index = get_json(client, f"{DDRAGON}/cdn/{version}/data/{LOCALE}/champion.json")["data"]
+    out: dict[str, dict] = {}
+    failed: list[str] = []
     for champ_id in index:
-        detail = client.get(f"{DDRAGON}/cdn/{version}/data/{LOCALE}/champion/{champ_id}.json").json()
-        out[champ_id] = detail["data"][champ_id]
+        try:
+            detail = get_json(client, f"{DDRAGON}/cdn/{version}/data/{LOCALE}/champion/{champ_id}.json")
+            out[champ_id] = detail["data"][champ_id]
+        except FETCH_ERRORS as exc:
+            print(f"FAIL {champ_id}: {exc!r}")
+            failed.append(champ_id)
         time.sleep(0.05)
-    return out
+    return out, failed
 
 
 def fetch_region(client: httpx.Client, title: str) -> str | None:
     # La wiki en español no tiene TextExtracts: se usa action=parse y se limpia el HTML.
     params = {"action": "parse", "prop": "text", "format": "json", "redirects": 1,
               "page": title, "disablelimitreport": 1}
-    data = client.get(WIKI_API, params=params).json()
+    data = get_json(client, WIKI_API, params=params)
     if "parse" not in data:
         return None
     raw = re.sub(r"(?is)<style.*?</style>|<script.*?</script>", "", data["parse"]["text"]["*"])
@@ -76,29 +102,56 @@ def main() -> None:
 
     store, ingestion = get_vector_store(), get_ingestion()
     DEMO_DIR.mkdir(exist_ok=True)
-    with httpx.Client(timeout=30, follow_redirects=True) as client:
+    ok = skipped = failed = missing = 0
+    with httpx.Client(timeout=30, follow_redirects=True, headers={"User-Agent": USER_AGENT}) as client:
         docs: list[tuple[str, str]] = []
-        for champ_id, champ in fetch_champions(client).items():
-            md = champion_markdown(champ)
+        champions, failed_ids = fetch_champions(client)
+        failed += len(failed_ids)
+        for champ_id, champ in champions.items():
+            try:
+                md = champion_markdown(champ)
+            except FETCH_ERRORS as exc:
+                print(f"FAIL {champ_id}: {exc!r}")
+                failed += 1
+                continue
             if champ_id in holdout:
                 (DEMO_DIR / f"{champ_id}.md").write_text(md, encoding="utf-8")
                 print(f"HOLDOUT {champ_id} -> demo_docs/{champ_id}.md")
                 continue
             docs.append((f"{champ_id}.md", md))
         for title in REGIONS:
-            text = fetch_region(client, title)
+            try:
+                text = fetch_region(client, title)
+            except FETCH_ERRORS as exc:
+                print(f"FAIL {title}: {exc!r}")
+                failed += 1
+                continue
+            finally:
+                time.sleep(0.2)
             if text is None:
                 print(f"MISSING región: {title} (revisa el título en la wiki)")
+                missing += 1
                 continue
             docs.append((f"Region-{title}.md", text))
 
     for name, text in docs:
         if store.find_shared(name):
             print(f"SKIP {name} (ya existe)")
+            skipped += 1
             continue
-        doc_id = store.create_document(None, name, "md")
-        ingestion.ingest(doc_id, name, text.encode("utf-8"))
+        try:
+            doc_id = store.create_document(None, name, "md")
+            ingestion.ingest(doc_id, name, text.encode("utf-8"))
+        except Exception as exc:  # un documento malo no debe abortar la carga
+            print(f"FAIL {name}: {exc!r}")
+            failed += 1
+            continue
         print(f"OK {name}")
+        ok += 1
+
+    print(f"ok={ok} skipped={skipped} failed={failed} missing={missing}")
+    if failed:
+        sys.exit(1)
 
 
 if __name__ == "__main__":
