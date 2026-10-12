@@ -1,14 +1,8 @@
+# La imagen del backend ya incluye su propio Ollama con los modelos (chat + embeddings),
+# por lo que no se necesita un servicio ollama aparte (el oficial viene sin modelos).
+# Uso: copia backend/.env.example a backend/.env, rellénalo y ejecuta `docker compose up --build`.
 services:
-  ollama:
-    image: ollama/ollama:latest
-    ports: ["11434:11434"]
-    volumes: ["ollama:/root/.ollama"]
   backend:
     build: ./backend
     env_file: ./backend/.env
-    environment:
-      OLLAMA_BASE_URL: http://ollama:11434
-    ports: ["8000:7860"]
-    depends_on: [ollama]
-volumes:
-  ollama:
+    ports: ["8000:7860"]   # la API escucha en 7860 dentro del contenedor
