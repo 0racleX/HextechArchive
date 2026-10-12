@@ -47,7 +47,7 @@ Vercel (React + Vite)  --JWT-->  Hugging Face Space (Docker)
 
 ## 4. Agente LangGraph
 
-Estado: `question`, `intent_ok`, `chunks[]` (contenido, score, fuente), `context_ok`, `answer`, `sources[]`, `refused`.
+Estado: `question`, `user_id`, `conversation_id`, `intent` (`str`: `ok` | `greeting` | `invalid`), `chunks` (contenido, score, fuente), `context_ok`, `answer`, `sources`, `refused`.
 
 Nodos:
 1. `validate_intent`: descarta mensajes vacíos, saludos y preguntas claramente ajenas a LoL/Runeterra. Si no es válido → `refuse` (o respuesta de aclaración).
@@ -58,6 +58,8 @@ Nodos:
 6. `save_history`: persiste la interacción (pregunta, respuesta, fuentes, bandera `refused`).
 
 Aristas condicionales: tras `validate_intent` y tras `grade_context`. Todas las rutas terminan en `save_history`.
+
+> **Implementation note / decisión de diseño (2026-10-12):** `validate_intent` se implementó como una validación barata sin LLM: solo rechaza texto de menos de 3 caracteres o sin palabras (`invalid`) y detecta saludos simples (`greeting`). Las preguntas ajenas a LoL/Runeterra no se filtran en este nodo; las rechaza después el umbral de similitud junto con `grade_context`, ya que no recuperan contexto suficiente. Motivo: evita una llamada extra al LLM (cada una cuesta segundos en CPU) y el comportamiento observable es el mismo (rechazo explícito). Los saludos e inputs inválidos se resuelven en `refuse` con su propio mensaje.
 
 ### Control de alucinaciones (el PDF pide ≥2; se implementan 4)
 - Umbral mínimo de similitud.
@@ -71,7 +73,7 @@ Flujo: recibir archivo → extraer texto → dividir en fragmentos (con solape) 
 
 Formatos: PDF, TXT, MD, CSV, DOCX, JSON. Multimedia (JPG/MP4/MP3) queda fuera de alcance (el PDF solo lo sugiere); se documenta como trabajo futuro. Se valida tipo y tamaño máximo.
 
-Corpus base (script `seed_corpus.py`): Data Dragon en español (campeones: lore, habilidades, roles), Universe de Riot y wikis (CC BY-SA, con atribución en el documento técnico). Se reservan 1-2 campeones o regiones fuera del corpus para la demo de carga en vivo.
+Corpus base (script `seed_corpus.py`): campeones desde Data Dragon (`es_MX`: lore, habilidades, roles) y regiones desde la wiki de LoL en español en Fandom (`action=parse`; CC BY-SA, con atribución en el documento técnico). Se reservan 1-2 campeones o regiones fuera del corpus para la demo de carga en vivo.
 
 ## 6. Datos (Postgres/Supabase)
 
@@ -86,7 +88,7 @@ RLS por `user_id` en todas las tablas. El corpus base tiene `user_id` nulo y es 
 
 Todos los endpoints exigen `Authorization: Bearer <JWT>` (validación de firma, expiración y audiencia), excepto `GET /health`.
 
-- `POST /chat` (streaming SSE; `conversation_id` opcional)
+- `POST /chat` (streaming SSE con eventos `step`, `token`, `final` y `error{message}`, más comentarios `: ping` de latido; `conversation_id` opcional)
 - `GET /conversations`, `GET /conversations/{id}`
 - `POST /documents` (multipart), `GET /documents`, `DELETE /documents/{id}`
 - `GET /me`
