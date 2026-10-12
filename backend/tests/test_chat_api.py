@@ -26,6 +26,12 @@ class FakeHistory:
     def owns_conversation(self, cid, user_id):
         return cid in self.convs and self.convs[cid]["user_id"] == user_id
 
+    def delete_conversation(self, cid, user_id):
+        if not self.owns_conversation(cid, user_id):
+            return False
+        del self.convs[cid], self.msgs[cid]
+        return True
+
     def add_message(self, cid, role, content, sources=None, refused=False):
         self.msgs[cid].append({"role": role, "content": content, "sources": sources,
                                "refused": refused, "created_at": "2026-01-01T00:00:00"})
@@ -135,3 +141,38 @@ def test_history_endpoints_return_messages(client, history):
     assert [c["id"] for c in listing] == [cid]
     detail = client.get(f"/conversations/{cid}", headers=headers()).json()
     assert [m["role"] for m in detail["messages"]] == ["user", "assistant"]
+
+
+class _DownLLM:
+    def invoke(self, prompt):
+        raise ConnectionError("connection refused")
+
+    def stream(self, prompt):
+        raise ConnectionError("connection refused")
+
+
+def test_failure_on_new_conversation_leaves_no_empty_conversation(client, history):
+    install_agent(history, _DownLLM(), GOOD)
+    r = client.post("/chat", json={"question": "¿Quién es Jinx?"}, headers=headers())
+    assert sse_events(r)[-1]["type"] == "error"
+    assert client.get("/conversations", headers=headers()).json() == []
+
+
+def test_failure_on_existing_conversation_does_not_delete_it(client, history):
+    install_agent(history, _DownLLM(), GOOD)
+    cid = history.create_conversation("user-a", "previa")
+    r = client.post("/chat", json={"question": "¿Quién es Jinx?", "conversation_id": cid}, headers=headers())
+    assert sse_events(r)[-1]["type"] == "error"
+    assert [c["id"] for c in client.get("/conversations", headers=headers()).json()] == [cid]
+
+
+def test_cleanup_failure_does_not_mask_error_event(client, history):
+    install_agent(history, _DownLLM(), GOOD)
+
+    def boom(*a, **k):
+        raise RuntimeError("db down")
+
+    history.delete_conversation = boom
+    r = client.post("/chat", json={"question": "¿Quién es Jinx?"}, headers=headers())
+    last = sse_events(r)[-1]
+    assert last["type"] == "error" and "db down" not in r.text

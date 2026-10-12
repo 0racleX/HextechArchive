@@ -90,3 +90,39 @@ def test_model_no_info_is_converted_into_refusal():
     assert state["refused"] is True
     assert state["answer"].startswith(prompts.REFUSAL_MESSAGE)
     assert state["sources"] == []
+
+
+@pytest.mark.parametrize("text", [
+    "Hola, ¿quién es Jinx?", "Hola ¿qué es Zaun?",
+    "Gracias, ¿y Vi?", "Buenas, háblame de Ekko",
+])
+def test_greeting_plus_question_reaches_retrieval(text):
+    llm = FakeLLM(["NO"])
+    retrieved = []
+    graph = build_graph(lambda q, u: retrieved.append(q) or [chunk(0.9)], llm, lambda s: None, 0.55)
+    graph.invoke({"question": text, "user_id": "u1", "conversation_id": "c1"})
+    assert retrieved == [text] and llm.calls == 1
+
+
+@pytest.mark.parametrize("text", ["Hola", "Buenas tardes", "hey"])
+def test_pure_greetings_stay_greetings(text):
+    llm = FakeLLM()
+    state, _ = run(text, [chunk(0.9)], llm)
+    assert state["answer"] == prompts.GREETING_MESSAGE and llm.calls == 0
+
+
+@pytest.mark.parametrize("verdict,ok", [
+    ("SI", True), ("SÍ.", True), ("Sí, el contexto lo cubre", True),
+    ("NO", False), ("Sin información suficiente", False), ("No, pero sí…", False), ("", False),
+])
+def test_grader_verdict_is_fail_closed(verdict, ok):
+    llm = FakeLLM([verdict, "Jinx es una criminal de Zaun [1]."] if ok else [verdict])
+    state, _ = run("¿Quién es Jinx?", [chunk(0.9)], llm)
+    assert state["refused"] is (not ok)
+
+
+def test_no_info_anywhere_in_answer_is_refusal():
+    llm = FakeLLM(["SI", "Lo siento, NO_INFO"])
+    state, _ = run("¿Quién es Jinx?", [chunk(0.9)], llm)
+    assert state["refused"] is True and state["sources"] == []
+    assert state["answer"].startswith(prompts.REFUSAL_MESSAGE)

@@ -22,8 +22,11 @@ def make_nodes(retriever, llm, save_history, threshold: float) -> SimpleNamespac
         q = state["question"].strip()
         if len(q) < 3 or not re.search(r"\w{2}", q):
             return {"intent": "invalid"}
-        if GREETING.match(q) and len(q.split()) <= 4:
-            return {"intent": "greeting"}
+        m = GREETING.match(q)
+        if m:
+            rest = re.sub(r"[^\w\s]", " ", q[m.end():])
+            if "?" not in q and "¿" not in q and len(rest.split()) <= 2:
+                return {"intent": "greeting"}
         return {"intent": "ok"}
 
     def retrieve(state):
@@ -36,7 +39,7 @@ def make_nodes(retriever, llm, save_history, threshold: float) -> SimpleNamespac
         verdict = llm.invoke(
             prompts.GRADE_PROMPT.format(context=_format_context(good), question=state["question"])
         ).content
-        ok = _norm(verdict).startswith("SI")
+        ok = re.match(r"^\W*SI\b", _norm(verdict)) is not None
         return {"chunks": good if ok else [], "context_ok": ok}
 
     def generate(state):
@@ -49,7 +52,7 @@ def make_nodes(retriever, llm, save_history, threshold: float) -> SimpleNamespac
             parts.append(piece.content)
             writer({"token": piece.content})
         answer = "".join(parts).strip()
-        if not answer or _norm(answer).startswith("NO_INFO"):
+        if not answer or "NO_INFO" in _norm(answer):
             return {"answer": f"{prompts.REFUSAL_MESSAGE} {prompts.SUGGESTION}", "sources": [], "refused": True}
         sources = [
             {"document": c.document_name, "snippet": c.content[:240], "score": round(c.score, 3)}

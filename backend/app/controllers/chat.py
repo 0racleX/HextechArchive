@@ -29,12 +29,14 @@ def chat(
     agent=Depends(get_agent),
     history=Depends(get_history_store),
 ) -> StreamingResponse:
+    created = False
     if body.conversation_id:
         conversation_id = str(body.conversation_id)
         if not history.owns_conversation(conversation_id, user.id):
             raise HTTPException(404, "Conversación no encontrada")
     else:
         conversation_id = history.create_conversation(user.id, body.question.strip()[:60])
+        created = True
 
     def stream():
         final: dict = {}
@@ -56,6 +58,12 @@ def chat(
             })
         except Exception:
             logger.exception("Error ejecutando el agente")
+            if created:
+                try:
+                    if not history.get_messages(conversation_id, user.id):
+                        history.delete_conversation(conversation_id, user.id)
+                except Exception:
+                    logger.exception("No se pudo limpiar la conversación vacía")
             yield _sse({"type": "error", "message": "El agente no pudo responder en este momento. Intenta de nuevo en unos segundos."})
 
     return StreamingResponse(

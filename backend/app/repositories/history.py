@@ -21,6 +21,14 @@ class HistoryStore:
             ).fetchone()
         return row is not None
 
+    def delete_conversation(self, conversation_id: str, user_id: str) -> bool:
+        with self.pool.connection() as conn:
+            row = conn.execute(
+                "delete from conversations where id = %s and user_id = %s returning id",
+                (conversation_id, user_id),
+            ).fetchone()
+        return row is not None
+
     def add_message(self, conversation_id: str, role: str, content: str,
                     sources: list | None = None, refused: bool = False) -> None:
         with self.pool.connection() as conn:
