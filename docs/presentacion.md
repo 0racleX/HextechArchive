@@ -34,7 +34,7 @@ Estética hextech: fondo azul abismo `#010A13`, dorado `#C8AA6E`, acento `#0AC8B
 - Aristas condicionales tras validate_intent y grade_context
 - 4 defensas anti-alucinación: umbral, grade_context, prompt restrictivo, rechazo + fuentes
 
-*Notas:* mostrar el grafo (`docs/arquitectura.md`). Explicar que el LLM verifica el contexto antes de responder. **PENDIENTE:** tasa de rechazo correcto de la evaluación.
+*Notas:* mostrar el grafo (`docs/arquitectura.md`). Explicar que `grade_context` verifica de forma determinista (términos de la pregunta presentes en el contexto) y que `generate` rechaza con NO_INFO si aun así falta información. **PENDIENTE:** tasa de rechazo correcto de la evaluación.
 
 ## 6. Base vectorial y carga de documentos
 - pgvector, `vector(768)`, índice HNSW, distancia coseno

@@ -5,6 +5,7 @@ from types import SimpleNamespace
 from langgraph.config import get_stream_writer
 
 from app.agents import prompts
+from app.agents.lexical import context_matches
 
 GREETING = re.compile(r"^\s*(hola|buenas|buenos dias|buenas tardes|buenas noches|hey|hi|gracias)\b", re.I)
 
@@ -38,13 +39,12 @@ def make_nodes(retriever, llm, save_history, threshold: float) -> SimpleNamespac
         return {"chunks": retriever(state["question"], state["user_id"])}
 
     def grade_context(state):
+        # Verificación determinista (sin llamada al modelo): umbral de similitud + los términos
+        # significativos de la pregunta deben aparecer en el contexto (o en el nombre del documento).
+        # `generate` conserva NO_INFO como segunda defensa.
         good = [c for c in state["chunks"] if c.score >= threshold]
-        if not good:
-            return {"chunks": [], "context_ok": False}
-        verdict = llm.invoke(
-            prompts.GRADE_PROMPT.format(context=_format_context(good), question=state["question"])
-        ).content
-        ok = re.match(r"^\W*SI\b", _norm(verdict)) is not None
+        text = " ".join(f"{c.document_name} {c.content}" for c in good)
+        ok = bool(good) and context_matches(state["question"], text)
         return {"chunks": good if ok else [], "context_ok": ok}
 
     def generate(state):

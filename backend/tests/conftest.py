@@ -17,7 +17,7 @@ def make_token(sub="user-a", secret=SECRET, exp_in=3600, aud="authenticated"):
 
 @pytest.fixture(autouse=True)
 def _settings_override():
-    app.dependency_overrides[get_settings] = lambda: Settings(_env_file=None, supabase_jwt_secret=SECRET)
+    app.dependency_overrides[get_settings] = lambda: Settings(_env_file=None, supabase_jwt_secret=SECRET, supabase_jwks_url="")
     yield
     app.dependency_overrides.clear()
 

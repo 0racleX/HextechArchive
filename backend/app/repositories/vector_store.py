@@ -58,6 +58,27 @@ class VectorStore:
             for r in rows
         ]
 
+    def search_documents(self, embedding: list[float], user_id: str, document_ids: list[str], k: int) -> list[RetrievedChunk]:
+        """Mejores fragmentos dentro de documentos concretos (siempre filtrados por visibilidad del usuario)."""
+        vec = _vec(embedding)
+        with self.pool.connection() as conn:
+            rows = conn.execute(
+                """
+                select c.content, d.id as document_id, d.name as document_name,
+                       1 - (c.embedding <=> %s::vector) as score
+                from chunks c join documents d on d.id = c.document_id
+                where d.status = 'ready' and (d.user_id is null or d.user_id = %s)
+                  and d.id = any(%s::uuid[])
+                order by c.embedding <=> %s::vector
+                limit %s
+                """,
+                (vec, user_id, document_ids, vec, k),
+            ).fetchall()
+        return [
+            RetrievedChunk(r["content"], float(r["score"]), str(r["document_id"]), r["document_name"])
+            for r in rows
+        ]
+
     def list_documents(self, user_id: str) -> list[DocumentRecord]:
         with self.pool.connection() as conn:
             rows = conn.execute(

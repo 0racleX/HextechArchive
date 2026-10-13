@@ -2,6 +2,7 @@ from functools import lru_cache
 
 from app.agents.graph import build_graph
 from app.agents.llm import build_llm
+from app.agents.retrieval import build_retriever
 from app.config import get_settings
 from app.repositories.db import make_pool
 from app.repositories.history import HistoryStore
@@ -40,9 +41,5 @@ def get_ingestion() -> IngestionService:
 @lru_cache
 def get_agent():
     s = get_settings()
-    store, embedder = get_vector_store(), get_embedder()
-
-    def retriever(question: str, user_id: str):
-        return store.search(embedder.embed_query(question), user_id, s.top_k)
-
+    retriever = build_retriever(get_vector_store(), get_embedder(), s.top_k)
     return build_graph(retriever, build_llm(s), make_history_saver(get_history_store()), s.similarity_threshold)

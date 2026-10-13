@@ -66,16 +66,23 @@ def test_low_similarity_chunks_are_discarded():
     assert state["refused"] is True and llm.calls == 0
 
 
-def test_grader_says_no_refuses():
-    llm = FakeLLM(["NO"])
-    state, _ = run("¿Quién es Jinx?", [chunk(0.9)], llm)
-    assert state["refused"] is True
-    assert llm.calls == 1
-    assert state["sources"] == []
+def test_question_terms_absent_from_context_refuse_without_model():
+    llm = FakeLLM()
+    state, saved = run("¿Cuál es la capital de Colombia?", [chunk(0.9)], llm)
+    assert state["refused"] is True and state["sources"] == []
+    assert state["answer"].startswith(prompts.REFUSAL_MESSAGE)
+    assert llm.calls == 0 and len(saved) == 1
+
+
+def test_document_name_counts_as_context_for_the_lexical_check():
+    llm = FakeLLM(["Briar es una campeona [1]."])
+    lore = RetrievedChunk("Una joven sedienta de sangre.", 0.9, "doc-2", "Briar.md")
+    state, _ = run("Hablame mas sobre Briar, su historia", [lore], llm)
+    assert state["refused"] is False and llm.calls == 1
 
 
 def test_grounded_answer_returns_sources():
-    llm = FakeLLM(["SÍ", "Jinx es una criminal de Zaun [1]."])
+    llm = FakeLLM(["Jinx es una criminal de Zaun [1]."])
     state, saved = run("¿Quién es Jinx?", [chunk(0.9), chunk(0.2, "ruido")], llm)
     assert state["refused"] is False
     assert state["answer"] == "Jinx es una criminal de Zaun [1]."
@@ -85,7 +92,7 @@ def test_grounded_answer_returns_sources():
 
 
 def test_model_no_info_is_converted_into_refusal():
-    llm = FakeLLM(["SI", "NO_INFO"])
+    llm = FakeLLM(["NO_INFO"])
     state, _ = run("¿Quién es Jinx?", [chunk(0.9)], llm)
     assert state["refused"] is True
     assert state["answer"].startswith(prompts.REFUSAL_MESSAGE)
@@ -97,9 +104,10 @@ def test_model_no_info_is_converted_into_refusal():
     "Gracias, ¿y Vi?", "Buenas, háblame de Ekko",
 ])
 def test_greeting_plus_question_reaches_retrieval(text):
-    llm = FakeLLM(["NO"])
+    llm = FakeLLM(["NO_INFO"])
     retrieved = []
-    graph = build_graph(lambda q, u: retrieved.append(q) or [chunk(0.9)], llm, lambda s: None, 0.55)
+    names = chunk(0.9, "Jinx, Zaun, Vi y Ekko son personajes de Piltóver.")
+    graph = build_graph(lambda q, u: retrieved.append(q) or [names], llm, lambda s: None, 0.55)
     graph.invoke({"question": text, "user_id": "u1", "conversation_id": "c1"})
     assert retrieved == [text] and llm.calls == 1
 
@@ -111,18 +119,8 @@ def test_pure_greetings_stay_greetings(text):
     assert state["answer"] == prompts.GREETING_MESSAGE and llm.calls == 0
 
 
-@pytest.mark.parametrize("verdict,ok", [
-    ("SI", True), ("SÍ.", True), ("Sí, el contexto lo cubre", True),
-    ("NO", False), ("Sin información suficiente", False), ("No, pero sí…", False), ("", False),
-])
-def test_grader_verdict_is_fail_closed(verdict, ok):
-    llm = FakeLLM([verdict, "Jinx es una criminal de Zaun [1]."] if ok else [verdict])
-    state, _ = run("¿Quién es Jinx?", [chunk(0.9)], llm)
-    assert state["refused"] is (not ok)
-
-
 def test_no_info_anywhere_in_answer_is_refusal():
-    llm = FakeLLM(["SI", "Lo siento, NO_INFO"])
+    llm = FakeLLM(["Lo siento, NO_INFO"])
     state, _ = run("¿Quién es Jinx?", [chunk(0.9)], llm)
     assert state["refused"] is True and state["sources"] == []
     assert state["answer"].startswith(prompts.REFUSAL_MESSAGE)

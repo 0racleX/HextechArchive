@@ -72,8 +72,8 @@ flowchart TD
 
 Nodos:
 1. `validate_intent`: validación barata y sin llamada al LLM. Marca `invalid` el texto de menos de 3 caracteres o sin ninguna palabra, y `greeting` los saludos simples (se responde con un saludo fijo). El resto es `ok`. Las preguntas ajenas a LoL/Runeterra **no** se filtran aquí: las rechazan después el umbral de similitud y `grade_context`, porque no recuperan contexto suficiente.
-2. `retrieve`: búsqueda por similitud en pgvector (top-k), filtrada por corpus compartido más los documentos del usuario.
-3. `grade_context`: umbral mínimo de similitud sobre los chunks y verificación del modelo ("¿este contexto permite responder? sí/no").
+2. `retrieve`: búsqueda por similitud en pgvector (top-k), filtrada por corpus compartido más los documentos del usuario. Si la pregunta nombra un documento visible (por ejemplo "Briar"), se anteponen los mejores fragmentos de ese documento (`app/agents/retrieval.py`), porque la similitud sola podía dejar fuera el fragmento de "Historia".
+3. `grade_context`: umbral mínimo de similitud sobre los chunks y verificación léxica determinista (`app/agents/lexical.py`): al menos el 60 % de los términos significativos de la pregunta (sin palabras funcionales, saludos ni palabras genéricas del corpus, comparados por prefijo de 7 letras) debe aparecer en el contexto o en el nombre del documento. No llama al modelo.
 4. `generate`: responde solo con el contexto, en español, citando fuentes; el prompt prohíbe conocimiento externo.
 5. `refuse`: mensaje fijo de rechazo y sugerencia de subir documentos relacionados.
 6. `save_history`: persiste pregunta, respuesta, fuentes y bandera `refused`.
@@ -104,7 +104,7 @@ Corpus base (`scripts/seed_corpus`): campeones desde Data Dragon (`es_MX`: lore,
 
 Se implementan cuatro (el PDF pide al menos dos):
 1. **Umbral de similitud** (`SIMILARITY_THRESHOLD`, valor inicial 0.55): chunks por debajo no cuentan como contexto. **PENDIENTE:** valor calibrado y tabla de evaluación (~20 preguntas válidas y fuera de tema: pregunta, mejor score, esperado, resultado, tasa de rechazo correcto).
-2. **Nodo `grade_context`**: además del umbral, el modelo verifica si el contexto permite responder; si no, se rechaza.
+2. **Nodo `grade_context`**: además del umbral, una verificación léxica determinista exige que los términos de la pregunta aparezcan en el contexto; si no, se rechaza sin llamar al modelo. Se probó primero un verificador basado en `qwen2.5:3b`, pero daba veredictos distintos para la misma entrada y rechazaba contextos válidos; se sustituyó por la regla léxica y `generate` conserva `NO_INFO` como segunda defensa.
 3. **Prompt restrictivo**: solo el contexto recuperado, sin conocimiento externo, en español.
 4. **Rechazo literal y fuentes visibles**: mensaje fijo de rechazo y fragmentos/fuentes citados en cada respuesta, de modo que el usuario puede verificarlos.
 

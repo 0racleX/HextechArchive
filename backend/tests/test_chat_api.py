@@ -74,7 +74,7 @@ def test_chat_requires_auth(client):
 
 
 def test_chat_streams_tokens_and_final_and_persists(client, history):
-    install_agent(history, FakeLLM(["SI", "Jinx es una criminal de Zaun [1]."]), GOOD)
+    install_agent(history, FakeLLM(["Jinx es una criminal de Zaun [1]."]), GOOD)
     r = client.post("/chat", json={"question": "¿Quién es Jinx?"}, headers=headers())
     assert r.status_code == 200
     events = sse_events(r)
@@ -184,12 +184,12 @@ def test_slow_agent_emits_ping_heartbeats_before_final(client, history, monkeypa
     from app.controllers import chat as chat_module
 
     class SlowLLM(FakeLLM):
-        def invoke(self, prompt):
+        def stream(self, prompt):
             time.sleep(0.25)
-            return super().invoke(prompt)
+            yield from super().stream(prompt)
 
     monkeypatch.setattr(chat_module, "HEARTBEAT_SECONDS", 0.05)
-    install_agent(history, SlowLLM(["SI", "Jinx es una criminal de Zaun [1]."]), GOOD)
+    install_agent(history, SlowLLM(["Jinx es una criminal de Zaun [1]."]), GOOD)
     r = client.post("/chat", json={"question": "¿Quién es Jinx?"}, headers=headers())
     assert r.status_code == 200
     assert r.text.count(": ping\n\n") >= 1
