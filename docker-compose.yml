@@ -5,4 +5,4 @@ services:
   backend:
     build: ./backend
     env_file: ./backend/.env
-    ports: ["8000:7860"]   # la API escucha en 7860 dentro del contenedor
+    ports: ["${BACKEND_PORT:-8000}:7860"]   # API en 7860 dentro del contenedor; cambia BACKEND_PORT si 8000 está reservado (Windows/Docker)
