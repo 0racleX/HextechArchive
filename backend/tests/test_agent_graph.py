@@ -131,3 +131,31 @@ def test_accented_greetings_are_detected(text):
     llm = FakeLLM()
     state, _ = run(text, [chunk(0.9)], llm)
     assert state["answer"] == prompts.GREETING_MESSAGE and llm.calls == 0
+
+
+@pytest.mark.parametrize("text", [
+    "Holi", "Oli", "Ola", "Holaaa", "Hello", "Buen día", "buen dia", "Buenas", "Saludos", "Ey",
+])
+def test_more_greeting_variants_are_detected(text):
+    llm = FakeLLM()
+    state, saved = run(text, [chunk(0.9)], llm)
+    assert state["answer"] == prompts.GREETING_MESSAGE and state["refused"] is False
+    assert llm.calls == 0 and len(saved) == 1
+
+
+@pytest.mark.parametrize("text", [
+    "¿Qué puedo consultar acerca de lol contigo?", "Que informacion me puedes responder?",
+    "¿Qué puedes hacer?", "ayuda", "Hola, ¿qué puedes hacer?",
+])
+def test_help_requests_get_the_help_message_without_touching_the_model(text):
+    llm = FakeLLM()
+    state, saved = run(text, [chunk(0.9)], llm)
+    assert state["answer"] == prompts.HELP_MESSAGE
+    assert state["refused"] is False and state["sources"] == []
+    assert llm.calls == 0 and len(saved) == 1
+
+
+def test_question_about_a_character_is_not_hijacked_by_help():
+    llm = FakeLLM(["Jinx es una criminal de Zaun [1]."])
+    state, _ = run("¿Qué puedes decirme de Jinx?", [chunk(0.9)], llm)
+    assert state["refused"] is False and llm.calls == 1

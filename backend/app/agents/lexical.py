@@ -21,6 +21,9 @@ _FUNCTION_WORDS = {
     "hablame", "cuentame", "explicame", "explica", "cuenta", "habla", "quiero", "saber", "conocer", "decir",
     "mucho", "poco", "tambien", "cada", "todo", "todos", "toda", "todas", "algunos", "algunas", "del", "ver",
     "sabes", "dices", "puedo", "dar", "hacer",
+    # verbos de petición ("¿qué puedes decirme de Jinx?")
+    "decirme", "decirnos", "contarme", "contar", "mencionar", "menciona", "mencioname", "comentar", "comentame",
+    "resumir", "resumeme", "explicar", "explicarme", "describe", "describir", "descripcion", "conoces",
     # saludos y cortesías
     "hola", "buenas", "buenos", "dias", "tardes", "noches", "gracias", "hey", "hi", "saludos", "favor", "porfa",
     "please", "disculpa", "perdon",
@@ -83,3 +86,31 @@ def document_matches_question(document_name: str, question: str) -> bool:
         return False
     question_terms = set(significant_terms(question))
     return all(t in question_terms for t in name_terms)
+
+
+# --- Peticiones de ayuda sobre el propio agente ("¿qué puedes hacer?", "¿qué información me puedes responder?") ---
+_HELP_PATTERNS = [
+    re.compile(r"\bque (puedo|puedes|podria|podrias|sabes|haces|eres|ofreces)\b"),
+    re.compile(r"\bque (informacion|temas|cosas|datos)\b.*\b(puedo|puedes|podria|tienes|manejas|sabes|respondes|responder|consultar)\b"),
+    re.compile(r"\ben que (me )?(puedes|podrias) ayudar\b"),
+    re.compile(r"\bde que (puedes )?(hablar|saber)\b"),
+    re.compile(r"\bcomo (funcionas|te uso|se usa)\b"),
+    re.compile(r"\bquien eres\b"),
+    re.compile(r"\bayuda\b"),
+]
+# Palabras que solo hablan del propio agente: si la pregunta contiene otro término, no es una petición de ayuda.
+_HELP_WORDS = {
+    "puedo", "puedes", "podria", "podrias", "podes", "sabes", "haces", "hacer", "eres", "ofreces", "tienes",
+    "manejas", "respondes", "responder", "consultar", "preguntar", "ayudar", "ayuda", "funcionas", "hablar",
+    "informacion", "temas", "cosas", "datos", "acerca", "contigo", "conmigo", "lol", "league", "legends",
+    "comandos", "usar", "uso", "saber", "quien", "funcionar", "sirves", "sirve",
+}
+
+
+def is_help_request(question: str) -> bool:
+    """True si el usuario pregunta qué puede hacer/consultar con el agente (y no por un personaje o tema)."""
+    plain = normalize(question)
+    if not any(p.search(plain) for p in _HELP_PATTERNS):
+        return False
+    leftover = [t for t in _TOKEN.findall(plain) if t not in STOPWORDS and t not in _HELP_WORDS and len(t) >= 2]
+    return not leftover

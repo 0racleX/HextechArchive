@@ -5,9 +5,12 @@ from types import SimpleNamespace
 from langgraph.config import get_stream_writer
 
 from app.agents import prompts
-from app.agents.lexical import context_matches
+from app.agents.lexical import context_matches, is_help_request
 
-GREETING = re.compile(r"^\s*(hola|buenas|buenos dias|buenas tardes|buenas noches|hey|hi|gracias)\b", re.I)
+GREETING = re.compile(
+    r"^\s*(hola+|holi+s?|ola|oli|ey|hey|hi|hello|saludos|buen dia|buenos dias|buenas tardes|buenas noches|buenas|gracias)\b",
+    re.I,
+)
 
 
 def _strip_accents(text: str) -> str:
@@ -25,14 +28,16 @@ def _format_context(chunks) -> str:
 def make_nodes(retriever, llm, save_history, threshold: float) -> SimpleNamespace:
     def validate_intent(state):
         q = state["question"].strip()
-        if len(q) < 3 or not re.search(r"\w{2}", q):
-            return {"intent": "invalid"}
         plain = _strip_accents(q)  # "buenos días" -> "buenos dias" (misma longitud, mismos índices)
         m = GREETING.match(plain)
-        if m:
+        if m:  # primero los saludos: "hi" o "ey" miden menos de 3 caracteres pero son saludos válidos
             rest = re.sub(r"[^\w\s]", " ", plain[m.end():])
             if "?" not in q and "¿" not in q and len(rest.split()) <= 2:
                 return {"intent": "greeting"}
+        if len(q) < 3 or not re.search(r"\w{2}", q):
+            return {"intent": "invalid"}
+        if is_help_request(q):
+            return {"intent": "help"}
         return {"intent": "ok"}
 
     def retrieve(state):
@@ -69,6 +74,8 @@ def make_nodes(retriever, llm, save_history, threshold: float) -> SimpleNamespac
         intent = state.get("intent")
         if intent == "greeting":
             return {"answer": prompts.GREETING_MESSAGE, "sources": [], "refused": False}
+        if intent == "help":
+            return {"answer": prompts.HELP_MESSAGE, "sources": [], "refused": False}
         if intent == "invalid":
             return {"answer": prompts.INVALID_MESSAGE, "sources": [], "refused": True}
         return {"answer": f"{prompts.REFUSAL_MESSAGE} {prompts.SUGGESTION}", "sources": [], "refused": True}

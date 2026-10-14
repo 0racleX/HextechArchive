@@ -73,3 +73,35 @@ from app.agents.lexical import document_matches_question  # noqa: E402
 ])
 def test_document_matches_question_by_name(doc, question, expected):
     assert document_matches_question(doc, question) is expected
+
+
+from app.agents.lexical import is_help_request  # noqa: E402
+
+
+@pytest.mark.parametrize("text", [
+    "¿Qué puedo consultar acerca de lol contigo?",
+    "Que informacion me puedes responder?",
+    "¿Qué puedes hacer?",
+    "ayuda",
+    "¿En qué me puedes ayudar?",
+    "Hola, ¿qué puedes hacer?",
+    "¿De qué puedes hablar?",
+    "¿Quién eres?",
+    "¿Cómo funcionas?",
+    "que sabes hacer",
+])
+def test_help_requests_are_detected(text):
+    assert is_help_request(text) is True
+
+
+@pytest.mark.parametrize("text", [
+    "¿Qué puedes decirme de Jinx?",
+    "¿Qué sabes de Zed?",
+    "¿Qué información tienes sobre Demacia?",
+    "¿Quién es Jinx?",
+    "Odio lol",
+    "Nombres de campeones por K",
+    "¿Qué es Noxus?",
+])
+def test_questions_about_entities_are_not_help_requests(text):
+    assert is_help_request(text) is False
