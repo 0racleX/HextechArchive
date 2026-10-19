@@ -4,6 +4,13 @@ Nota: la última pregunta del set ("¿Quién es Briar?") solo debe rechazarse mi
 Briar.md NO esté cargado en el corpus; si lo está, elimínala de questions.json (o
 cámbiala a "answer") antes de calibrar.
 
+El set incluye paráfrasis, preguntas en inglés, erratas y trampas fuera de dominio que comparten un nombre
+de campeón ("Dame la receta de Darius"). Las respuestas esperadas solo usan datos del corpus compartido
+(Data Dragon + regiones): los documentos de demo_docs/lore se suben a mano en la demo y no los ve el usuario
+anónimo de esta evaluación. Las preguntas en inglés además dependen de que la similitud entre embeddings
+inglés/español supere el umbral; si fallan con top_sim bajo, el problema es la recuperación, no el grader.
+El grader léxico se prueba sin BD ni Ollama en tests/test_lexical.py.
+
 top_sim es el score CRUDO más alto devuelto por el retriever (antes del filtro de
 umbral); "n/a" si la recuperación no llegó a ejecutarse.
 
@@ -49,6 +56,7 @@ def should_fail(got: list[str], expected: list[str]) -> list[str]:
 def main() -> None:
     from app.agents.graph import build_graph
     from app.agents.llm import build_llm
+    from app.agents.retrieval import build_retriever
     from app.config import get_settings
     from app.deps import get_embedder, get_vector_store
 
@@ -58,8 +66,10 @@ def main() -> None:
     user = str(uuid.uuid4())  # usuario sin documentos propios: solo ve el corpus compartido
     raw_top: list[Optional[float]] = [None]
 
+    base_retriever = build_retriever(store, embedder, settings.top_k)
+
     def retriever(question, user_id):
-        chunks = store.search(embedder.embed_query(question), user_id, settings.top_k)
+        chunks = base_retriever(question, user_id)
         raw_top[0] = max((c.score for c in chunks), default=0.0)
         return chunks
 

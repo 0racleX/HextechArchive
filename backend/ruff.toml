@@ -1,0 +1,17 @@
+# Configuración de Ruff para el backend. Se ejecuta desde backend/: `ruff check .`
+line-length = 120
+target-version = "py311"
+extend-exclude = [".venv", "__pycache__", "demo_docs"]
+
+[lint]
+# E4/E7/E9 (errores de imports, sentencias y sintaxis), F (pyflakes) e I (orden de imports).
+# E501 (longitud de línea) no se aplica al lint: hay 24 líneas de más en el código actual y
+# se dejan sin reformatear; line-length=120 sigue siendo la referencia para código nuevo.
+select = ["E4", "E7", "E9", "F", "I"]
+# I001 (imports sin ordenar) ya incumple en 14 ficheros existentes; se ignora para no
+# reformatear código actual. Quitar esta línea cuando se aplique `ruff check --fix`.
+ignore = ["I001"]
+
+[lint.per-file-ignores]
+# Algunos tests configuran entorno o sys.path antes de importar la app (imports no al principio).
+"tests/**" = ["E402"]

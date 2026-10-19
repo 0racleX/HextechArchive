@@ -55,7 +55,7 @@ def test_processing_documents_are_not_searchable(pool):
     doc = store.create_document(u, "p.txt", "txt")
     store.add_chunks(doc, ["pendiente"], [vec(0.5)])
     try:
-        assert store.search(vec(0.5), u, 5) == []
+        assert doc not in {c.document_id for c in store.search(vec(0.5), u, 50)}
     finally:
         store.delete_document(doc, u)
 
@@ -94,3 +94,22 @@ def test_find_shared_only_ready_and_purge_failed_shared(pool):
     finally:
         with pool.connection() as conn:
             conn.execute("delete from documents where user_id is null and name = %s", (name,))
+
+
+def test_search_documents_is_scoped_to_given_docs_and_user(pool):
+    store = VectorStore(pool)
+    a, b = str(uuid.uuid4()), str(uuid.uuid4())
+    doc1 = store.create_document(a, "uno.txt", "txt")
+    doc2 = store.create_document(a, "dos.txt", "txt")
+    foreign = store.create_document(b, "ajeno.txt", "txt")
+    for doc, text in ((doc1, "contenido uno"), (doc2, "contenido dos"), (foreign, "contenido ajeno")):
+        store.add_chunks(doc, [text], [vec(0.9)])
+        store.set_status(doc, "ready")
+    try:
+        only1 = store.search_documents(vec(0.9), a, [doc1], 5)
+        assert [c.content for c in only1] == ["contenido uno"]
+        both = {c.content for c in store.search_documents(vec(0.9), a, [doc1, doc2, foreign], 5)}
+        assert both == {"contenido uno", "contenido dos"}   # el documento ajeno nunca aparece
+    finally:
+        for doc, owner in ((doc1, a), (doc2, a), (foreign, b)):
+            store.delete_document(doc, owner)

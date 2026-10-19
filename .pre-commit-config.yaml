@@ -1,0 +1,8 @@
+# Instalar una vez: pip install pre-commit && pre-commit install
+# La configuración de ruff se toma de backend/ruff.toml (ruff la descubre por ruta de fichero).
+repos:
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.17.1
+    hooks:
+      - id: ruff
+        files: ^backend/

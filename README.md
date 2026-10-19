@@ -42,7 +42,7 @@ Más detalle (grafo del agente) en [docs/arquitectura.md](docs/arquitectura.md).
 
 ## Ejecución local
 
-1. **Supabase:** crear un proyecto y ejecutar `backend/supabase/migrations/001_init.sql` en el SQL Editor. Crear un usuario en *Authentication → Users*.
+1. **Supabase:** crear un proyecto y ejecutar en el SQL Editor, en orden, `backend/supabase/migrations/001_init.sql` y `002_content_hash.sql` (deduplicación de documentos). Crear un usuario en *Authentication → Users*.
 2. **Variables:** copiar `.env.example` a `backend/.env` (variables de backend) y a `frontend/.env` (las `VITE_*`), y rellenarlas.
 3. **Modelos:**
    ```bash
@@ -64,7 +64,8 @@ Más detalle (grafo del agente) en [docs/arquitectura.md](docs/arquitectura.md).
    npm run dev      # http://localhost:5173
    ```
 7. **Alternativa con Docker:** `docker compose up --build` (con `backend/.env` relleno) levanta solo el backend en `http://localhost:8000`; la imagen ya incluye su propio Ollama con `qwen2.5:3b` y `nomic-embed-text`, así que no hace falta un servicio Ollama aparte.
-8. **Tests del backend:** `cd backend && pip install -r requirements-dev.txt && python -m pytest`.
+8. **Atajo:** `scripts/dev.ps1` (Windows) o `scripts/dev.sh` arrancan backend y frontend avisando si los puertos 8000/5173 ya están ocupados. `docker compose up --build` levanta además el frontend en `http://localhost:5173`.
+9. **Tests y lint:** `cd backend && pip install -r requirements-dev.txt && python -m pytest && ruff check .`; frontend: `cd frontend && npm test`. La CI (`.github/workflows/ci.yml`) ejecuta ambos en cada push y PR.
 
 ## Despliegue
 
@@ -80,6 +81,8 @@ Más detalle (grafo del agente) en [docs/arquitectura.md](docs/arquitectura.md).
    Si rechaza por historial divergente: ``git push space `git subtree split --prefix backend main`:main --force``.
    Nota: los modelos se descargan al construir la imagen; cambiar `CHAT_MODEL` o `EMBED_MODEL` exige reconstruir la imagen.
 4. Esperar el build (10-20 min la primera vez; descarga los modelos). Comprobar `curl https://<usuario>-hextech-archive.hf.space/health` → `{"status":"ok"}`.
+
+Antes del primer uso aplica también `002_content_hash.sql` en Supabase. Los Spaces gratuitos se duermen tras un rato sin tráfico: la primera petición tarda mientras arranca Ollama.
 
 ### Frontend en Vercel
 
@@ -102,12 +105,22 @@ Copiadas de `.env.example`.
 | `SIMILARITY_THRESHOLD` | Backend | Umbral mínimo de similitud | `0.55` |
 | `TOP_K` | Backend | Fragmentos recuperados | `5` |
 | `MAX_UPLOAD_MB` | Backend | Tamaño máximo de subida | `10` |
+| `RATE_LIMIT_CHAT_PER_MIN` | Backend | Peticiones a `/chat` por usuario y minuto (0 = sin límite) | `10` |
+| `RATE_LIMIT_UPLOAD_PER_MIN` | Backend | Subidas de documentos por usuario y minuto (0 = sin límite) | `5` |
+| `CATALOG_CACHE_TTL_SECONDS` | Backend | TTL de la caché del catálogo de documentos | `30` |
+| `MAX_DOCS_PER_USER` | Backend | Máximo de documentos por usuario (0 = sin límite) | `50` |
 | `CORS_ORIGINS` | Backend | Orígenes permitidos (coma) | `http://localhost:5173` |
 | `VITE_API_URL` | Frontend | URL del backend | `http://localhost:8000` |
 | `VITE_SUPABASE_URL` | Frontend | URL del proyecto Supabase | vacío |
 | `VITE_SUPABASE_ANON_KEY` | Frontend | Clave anónima de Supabase | vacío |
 
 **Qué variable de JWT usar:** en Supabase abre *Project Settings → JWT Keys* (JWT Signing Keys). Si el proyecto firma con **ES256/RS256** (lo habitual en proyectos nuevos) define `SUPABASE_JWKS_URL` y deja `SUPABASE_JWT_SECRET` vacío; si usa el secreto heredado **HS256**, define `SUPABASE_JWT_SECRET`. Síntoma de equivocarse: **todas** las peticiones devuelven 401; diagnostica mirando el `alg` del token (jwt.io) y el log del backend.
+
+## Seguridad y límites
+
+- Todos los endpoints exigen JWT de Supabase; los límites por usuario (`/chat`, subidas, número de documentos) están en memoria, por lo que valen para un único proceso (el Space ejecuta uno).
+- Subidas duplicadas (mismo contenido y usuario) se rechazan con 409 sin reprocesar.
+- `/health` devuelve `{"status":"ok","auth_configured":bool}` para diagnosticar 401 por configuración.
 
 ## Capturas
 

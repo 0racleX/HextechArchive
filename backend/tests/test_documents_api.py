@@ -78,3 +78,54 @@ def test_path_traversal_filename_is_sanitized(client, store):
     r = upload(client, "../../etc/passwd.txt", b"hola mundo")
     assert r.status_code == 202
     assert r.json()["name"] == "passwd.txt"
+
+
+def test_duplicate_content_same_user_is_409_and_not_reprocessed(client, store):
+    assert upload(client, "a.txt", b"mismo contenido").status_code == 202
+    r = upload(client, "copia.txt", b"mismo contenido")
+    assert r.status_code == 409 and "mismo contenido" in r.json()["detail"] and "a.txt" in r.json()["detail"]
+    assert len(store.docs) == 1
+
+
+def test_duplicate_content_other_user_is_allowed(client, store):
+    assert upload(client, "a.txt", b"mismo contenido", user="user-a").status_code == 202
+    assert upload(client, "a.txt", b"mismo contenido", user="user-b").status_code == 202
+
+
+def test_failed_document_can_be_reuploaded(client, store):
+    doc_id = upload(client, "a.txt", b"   ").json()["id"]
+    assert store.docs[doc_id]["status"] == "error"
+    assert upload(client, "a.txt", b"   ").status_code == 202
+
+
+def test_document_limit_per_user_is_409(client, store):
+    from app.config import Settings, get_settings
+    from tests.conftest import SECRET
+    app.dependency_overrides[get_settings] = lambda: Settings(
+        _env_file=None, supabase_jwt_secret=SECRET, supabase_jwks_url="", max_docs_per_user=2)
+    assert upload(client, "1.txt", b"uno").status_code == 202
+    assert upload(client, "2.txt", b"dos").status_code == 202
+    r = upload(client, "3.txt", b"tres")
+    assert r.status_code == 409 and "límite de 2" in r.json()["detail"]
+    assert upload(client, "3.txt", b"tres", user="user-b").status_code == 202
+
+
+def test_upload_rate_limit_returns_429(client, store):
+    from app.config import Settings, get_settings
+    from tests.conftest import SECRET
+    app.dependency_overrides[get_settings] = lambda: Settings(
+        _env_file=None, supabase_jwt_secret=SECRET, supabase_jwks_url="", rate_limit_upload_per_min=2)
+    assert upload(client, "1.txt", b"uno").status_code == 202
+    assert upload(client, "2.txt", b"dos").status_code == 202
+    r = upload(client, "3.txt", b"tres")
+    assert r.status_code == 429 and "Demasiadas" in r.json()["detail"]
+
+
+def test_upload_and_delete_invalidate_catalog_cache(client, store):
+    from app.deps import make_catalog
+    catalog = make_catalog(store, 30)
+    assert catalog("user-a") == []
+    doc_id = upload(client, "a.txt", b"contenido de A").json()["id"]
+    assert catalog("user-a") == ["a.txt"]
+    assert client.delete(f"/documents/{doc_id}", headers=headers()).status_code == 204
+    assert catalog("user-a") == []

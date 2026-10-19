@@ -74,7 +74,7 @@ def test_chat_requires_auth(client):
 
 
 def test_chat_streams_tokens_and_final_and_persists(client, history):
-    install_agent(history, FakeLLM(["SI", "Jinx es una criminal de Zaun [1]."]), GOOD)
+    install_agent(history, FakeLLM(["Jinx es una criminal de Zaun [1]."]), GOOD)
     r = client.post("/chat", json={"question": "¿Quién es Jinx?"}, headers=headers())
     assert r.status_code == 200
     events = sse_events(r)
@@ -87,13 +87,13 @@ def test_chat_streams_tokens_and_final_and_persists(client, history):
 
 
 def test_chat_refusal_is_flagged(client, history):
-    install_agent(history, FakeLLM(), [])
+    install_agent(history, FakeLLM(["OTRO", "OTRO"]), [])
     final = sse_events(client.post("/chat", json={"question": "¿Receta de sushi?"}, headers=headers()))[-1]
     assert final["refused"] is True and "No tengo suficiente información" in final["answer"]
 
 
 def test_chat_continues_existing_conversation(client, history):
-    install_agent(history, FakeLLM(), [])
+    install_agent(history, FakeLLM(["OTRO", "OTRO"]), [])
     first = sse_events(client.post("/chat", json={"question": "¿Receta de sushi?"}, headers=headers()))[-1]
     cid = first["conversation_id"]
     second = sse_events(client.post("/chat", json={"question": "¿Otra receta?", "conversation_id": cid},
@@ -103,7 +103,7 @@ def test_chat_continues_existing_conversation(client, history):
 
 
 def test_cannot_use_foreign_conversation(client, history):
-    install_agent(history, FakeLLM(), [])
+    install_agent(history, FakeLLM(["OTRO", "OTRO"]), [])
     cid = history.create_conversation("user-a", "privada")
     r = client.post("/chat", json={"question": "¿Hola qué tal?", "conversation_id": cid}, headers=headers("user-b"))
     assert r.status_code == 404
@@ -113,7 +113,7 @@ def test_cannot_use_foreign_conversation(client, history):
 
 @pytest.mark.parametrize("body", [{"question": ""}, {"question": "x" * 1001}, {}])
 def test_invalid_question_payload_is_422(client, history, body):
-    install_agent(history, FakeLLM(), [])
+    install_agent(history, FakeLLM(["OTRO", "OTRO"]), [])
     assert client.post("/chat", json=body, headers=headers()).status_code == 422
 
 
@@ -135,7 +135,7 @@ def test_ollama_down_emits_friendly_error_event(client, history):
 
 
 def test_history_endpoints_return_messages(client, history):
-    install_agent(history, FakeLLM(), [])
+    install_agent(history, FakeLLM(["OTRO", "OTRO"]), [])
     cid = sse_events(client.post("/chat", json={"question": "¿Receta de sushi?"}, headers=headers()))[-1]["conversation_id"]
     listing = client.get("/conversations", headers=headers()).json()
     assert [c["id"] for c in listing] == [cid]
@@ -184,12 +184,12 @@ def test_slow_agent_emits_ping_heartbeats_before_final(client, history, monkeypa
     from app.controllers import chat as chat_module
 
     class SlowLLM(FakeLLM):
-        def invoke(self, prompt):
+        def stream(self, prompt):
             time.sleep(0.25)
-            return super().invoke(prompt)
+            yield from super().stream(prompt)
 
     monkeypatch.setattr(chat_module, "HEARTBEAT_SECONDS", 0.05)
-    install_agent(history, SlowLLM(["SI", "Jinx es una criminal de Zaun [1]."]), GOOD)
+    install_agent(history, SlowLLM(["Jinx es una criminal de Zaun [1]."]), GOOD)
     r = client.post("/chat", json={"question": "¿Quién es Jinx?"}, headers=headers())
     assert r.status_code == 200
     assert r.text.count(": ping\n\n") >= 1
@@ -238,3 +238,61 @@ def test_client_disconnect_stops_worker_thread(history):
     while threading.active_count() >= before and time.time() < deadline:
         time.sleep(0.05)
     assert threading.active_count() < before
+
+
+def test_history_saver_stores_the_original_question_for_random_requests():
+    h = FakeHistory()
+    cid = h.create_conversation("user-a", "t")
+    make_history_saver(h)({
+        "conversation_id": cid, "question": "Cuéntame la historia de Zed.",
+        "original_question": "Cuéntame la historia de algún campeón", "answer": "Zed...", "sources": [], "refused": False,
+    })
+    assert h.msgs[cid][0]["content"] == "Cuéntame la historia de algún campeón"
+
+
+def test_chat_rate_limit_per_user_returns_429(client, history):
+    from app.config import Settings, get_settings
+    from tests.conftest import SECRET
+    app.dependency_overrides[get_settings] = lambda: Settings(
+        _env_file=None, supabase_jwt_secret=SECRET, supabase_jwks_url="", rate_limit_chat_per_min=2)
+    install_agent(history, FakeLLM(["OTRO", "OTRO"] * 4), [])
+    for _ in range(2):
+        assert client.post("/chat", json={"question": "¿Receta de sushi?"}, headers=headers()).status_code == 200
+    r = client.post("/chat", json={"question": "¿Receta de sushi?"}, headers=headers())
+    assert r.status_code == 429
+    assert "Demasiadas" in r.json()["detail"] and int(r.headers["Retry-After"]) >= 1
+    assert client.post("/chat", json={"question": "¿Receta de sushi?"}, headers=headers("user-b")).status_code == 200
+
+
+def test_closing_stream_closes_agent_generator(history):
+    import threading
+    import time
+
+    from app.controllers.chat import ChatRequest, _event_stream
+    from app.security.auth import CurrentUser
+
+    closed = threading.Event()
+    produced = []
+
+    class EndlessAgent:
+        def stream(self, init, stream_mode):
+            def gen():
+                try:
+                    i = 0
+                    while True:
+                        i += 1
+                        produced.append(i)
+                        yield ("custom", {"token": "x"})
+                        time.sleep(0.01)
+                finally:
+                    closed.set()
+            return gen()
+
+    cid = history.create_conversation("user-a", "t")
+    events = _event_stream(ChatRequest(question="hola"), CurrentUser(id="user-a", email=None), EndlessAgent(), history, cid, False)
+    assert next(events).startswith("data: ")
+    events.close()  # el cliente se desconecta
+    assert closed.wait(5), "el generador del agente no se cerró"
+    n = len(produced)
+    time.sleep(0.2)
+    assert len(produced) <= n + 1

@@ -3,6 +3,7 @@ import { useSearchParams } from "react-router-dom";
 import Frame from "../components/Frame";
 import Message from "../components/Message";
 import { api, streamChat } from "../lib/api";
+import { stepLabel } from "../lib/steps";
 
 const SUGGESTIONS = ["¿Quién es Jinx?", "¿Qué es Demacia?", "¿Qué hace la pasiva de Ahri?", "¿Qué son las Islas de la Sombra?"];
 
@@ -17,12 +18,14 @@ export default function Chat() {
 
   const justCreated = useRef(null);
   const token = useRef(0);
+  const controller = useRef(null);
 
   useEffect(() => {
     if (conversationId && conversationId === justCreated.current) {
       justCreated.current = null; // id set by this component after streaming: keep messages
       return;
     }
+    controller.current?.abort();
     token.current += 1; // invalidates any in-flight stream for the previous conversation
     setBusy(false);
     setError("");
@@ -51,24 +54,34 @@ export default function Chat() {
     const dropPending = () => setMessages((m) => m.filter((x) => !x.pending));
     let streamed = "";
     let done = false;
+    const ctrl = new AbortController();
+    controller.current = ctrl;
     try {
       await streamChat(question, conversationId, (ev) => {
         if (stale()) return;
+        if (ev.type === "step") patchLast({ stepText: stepLabel(ev.node) });
         if (ev.type === "token") { streamed += ev.text; patchLast({ content: streamed }); }
         if (ev.type === "final") {
           done = true;
-          patchLast({ content: ev.answer, sources: ev.sources, refused: ev.refused, pending: false });
+          patchLast({ content: ev.answer, sources: ev.sources, refused: ev.refused, pending: false, stepText: "" });
           if (!conversationId) { justCreated.current = ev.conversation_id; setParams({ c: ev.conversation_id }, { replace: true }); }
         }
         if (ev.type === "error") { done = true; setError(ev.message); dropPending(); }
-      });
+      }, ctrl.signal);
       if (!done && !stale()) { setError("La conexión se cerró antes de recibir respuesta."); dropPending(); }
     } catch (e) {
-      if (!stale()) { setError(e.message); dropPending(); }
+      if (stale()) return;
+      if (e.name === "AbortError") {
+        if (streamed) setMessages((m) => m.map((x) => (x.pending ? { ...x, pending: false, stepText: "" } : x)));
+        else dropPending();
+      } else { setError(e.message); dropPending(); }
     } finally {
+      if (controller.current === ctrl) controller.current = null;
       if (!stale()) setBusy(false);
     }
   }
+
+  function cancel() { controller.current?.abort(); }
 
   return (
     <Frame className="flex h-[calc(100vh-150px)] min-h-[420px] flex-col">
@@ -93,7 +106,9 @@ export default function Chat() {
       <form className="flex gap-3 border-t border-gold/30 p-4" onSubmit={(e) => { e.preventDefault(); send(input); }}>
         <input className="field" placeholder="¿Qué deseas saber, invocador?" value={input} maxLength={1000}
                onChange={(e) => setInput(e.target.value)} disabled={busy} aria-label="Pregunta" />
-        <button className="btn-gold" disabled={busy || !input.trim()}>{busy ? "…" : "Preguntar"}</button>
+        {busy
+          ? <button type="button" className="btn-ghost" onClick={cancel}>Cancelar</button>
+          : <button className="btn-gold" disabled={!input.trim()}>Preguntar</button>}
       </form>
     </Frame>
   );

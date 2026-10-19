@@ -51,8 +51,8 @@ Estado: `question`, `user_id`, `conversation_id`, `intent` (`str`: `ok` | `greet
 
 Nodos:
 1. `validate_intent`: descarta mensajes vacíos, saludos y preguntas claramente ajenas a LoL/Runeterra. Si no es válido → `refuse` (o respuesta de aclaración).
-2. `retrieve`: búsqueda por similitud en pgvector (top-k, filtrada por corpus compartido + documentos del usuario).
-3. `grade_context`: (a) umbral mínimo de similitud sobre los chunks; (b) verificación del modelo "¿este contexto permite responder la pregunta? sí/no". Si falla → `refuse`.
+2. `retrieve`: búsqueda por similitud en pgvector (top-k, filtrada por corpus compartido + documentos del usuario). Si la pregunta nombra un documento visible (p. ej. "Briar"), se anteponen los mejores fragmentos de ese documento.
+3. `grade_context`: (a) umbral mínimo de similitud sobre los chunks; (b) verificación léxica determinista: los términos significativos de la pregunta deben aparecer en el contexto o en el nombre del documento. Si falla → `refuse`.
 4. `generate`: responde solo con el contexto, en español, citando las fuentes. El prompt prohíbe usar conocimiento externo.
 5. `refuse`: devuelve el mensaje fijo "No tengo suficiente información en mi base de conocimiento para responder esa pregunta." y sugiere subir documentos relacionados.
 6. `save_history`: persiste la interacción (pregunta, respuesta, fuentes, bandera `refused`).
@@ -134,3 +134,5 @@ Entregables: repositorio GitHub, documento técnico (14 apartados, PDF), sustent
 ## 12. Fuera de alcance
 
 Ingesta multimedia (JPG/MP4/MP3), roles de administrador, y moderación avanzada de contenido subido.
+
+> **Implementation note / decisión de diseño (2026-10-13):** la verificación (b) de `grade_context` se implementó como regla léxica determinista (`app/agents/lexical.py`) y no como pregunta al modelo. Con `qwen2.5:3b` en CPU el veredicto "¿es suficiente el contexto?" no era reproducible (misma entrada, resultados distintos entre corridas) y rechazaba contextos válidos. Además, la similitud coseno de `nomic-embed-text` en español no separa preguntas válidas (0.60–0.82) de ajenas (0.65–0.70), por lo que el umbral actúa como filtro grueso. `generate` conserva `NO_INFO` como segunda defensa. Beneficio adicional: una llamada al modelo menos por pregunta y rechazo inmediato de lo ajeno al corpus.

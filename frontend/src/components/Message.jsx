@@ -1,4 +1,4 @@
-export default function Message({ role, content, sources = [], refused = false, pending = false }) {
+export default function Message({ role, content, sources = [], refused = false, pending = false, stepText = "" }) {
   const mine = role === "user";
   return (
     <div className={`flex ${mine ? "justify-end" : "justify-start"}`}>
@@ -12,7 +12,7 @@ export default function Message({ role, content, sources = [], refused = false, 
         } ${pending ? "glow-pulse" : ""}`}
       >
         {!mine && <div className="mb-1 font-display text-[0.65rem] tracking-[0.25em] text-gold">ARCHIVISTA</div>}
-        <p className="whitespace-pre-wrap">{content || (pending ? "Consultando los archivos…" : "")}</p>
+        <p className="whitespace-pre-wrap" role={pending && !content ? "status" : undefined}>{content || (pending ? `${stepText || "Consultando los archivos"}…` : "")}</p>
         {!mine && !refused && sources.length > 0 && (
           <details className="mt-3">
             <summary className="cursor-pointer text-sm text-ink hover:text-gold">

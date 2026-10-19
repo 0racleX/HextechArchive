@@ -5,4 +5,14 @@ services:
   backend:
     build: ./backend
     env_file: ./backend/.env
-    ports: ["8000:7860"]   # la API escucha en 7860 dentro del contenedor
+    ports: ["${BACKEND_PORT:-8000}:7860"]   # API en 7860 dentro del contenedor; cambia BACKEND_PORT si 8000 está reservado (Windows/Docker)
+
+  # Frontend estático (nginx). Las VITE_* se leen del .env de la raíz (o del entorno) y se hornean en el build.
+  frontend:
+    build:
+      context: ./frontend
+      args:
+        VITE_API_URL: ${VITE_API_URL:-http://localhost:${BACKEND_PORT:-8000}}
+        VITE_SUPABASE_URL: ${VITE_SUPABASE_URL:-}
+        VITE_SUPABASE_ANON_KEY: ${VITE_SUPABASE_ANON_KEY:-}
+    ports: ["${FRONTEND_PORT:-5173}:80"]

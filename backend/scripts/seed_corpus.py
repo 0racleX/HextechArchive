@@ -14,7 +14,7 @@ WIKI_API = "https://leagueoflegends.fandom.com/es/api.php"
 USER_AGENT = "HextechArchive/0.1 (educational project)"
 REGIONS = [
     "Demacia", "Noxus", "Piltóver", "Zaun", "Freljord", "Jonia", "Islas de la Sombra",
-    "Targon", "Shurima", "Aguas Estancadas", "Ixtal", "El Vacío", "Bandle City",
+    "Targón", "Shurima", "Aguas Estancadas", "Ixtal", "El Vacío", "Ciudad Bandle",
 ]
 DEMO_DIR = Path(__file__).resolve().parents[1] / "demo_docs"
 MAX_ATTEMPTS = 3
