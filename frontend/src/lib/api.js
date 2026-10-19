@@ -12,12 +12,16 @@ async function authHeaders() {
 }
 
 async function readError(res) {
+  let detail = "";
   try {
     const body = await res.json();
-    return typeof body.detail === "string" ? body.detail : "La solicitud no es válida.";
+    if (typeof body.detail === "string") detail = body.detail;
   } catch {
-    return `Error ${res.status}`;
+    // body not JSON
   }
+  if (res.status === 429) return detail || "Demasiadas solicitudes. Espera un momento e inténtalo de nuevo.";
+  if (res.status === 409) return detail || "Conflicto: el documento ya existe o alcanzaste el límite de documentos.";
+  return detail || (res.status === 422 ? "La solicitud no es válida." : `Error ${res.status}`);
 }
 
 export async function api(path, options = {}) {
