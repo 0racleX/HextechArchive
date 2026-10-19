@@ -1,0 +1,22 @@
+# Producción en una VM (Oracle Cloud Always Free, ARM). Uso: ver docs/despliegue-oracle.md
+# Requiere un archivo .env junto a este compose con las variables del backend y DOMAIN.
+services:
+  backend:
+    build: ../../backend
+    env_file: .env
+    restart: unless-stopped
+    expose: ["7860"]
+
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    ports: ["80:80", "443:443"]
+    environment:
+      DOMAIN: ${DOMAIN}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+    depends_on: [backend]
+
+volumes:
+  caddy-data:

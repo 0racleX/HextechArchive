@@ -1,0 +1,9 @@
+{$DOMAIN} {
+	# flush_interval -1: no almacenar en búfer el streaming SSE del chat
+	reverse_proxy backend:7860 {
+		flush_interval -1
+		transport http {
+			response_header_timeout 300s
+		}
+	}
+}
