@@ -15,6 +15,10 @@ class Settings(BaseSettings):
     similarity_threshold: float = 0.55
     top_k: int = 5
     max_upload_mb: int = 10
+    rate_limit_chat_per_min: int = 10
+    rate_limit_upload_per_min: int = 5
+    catalog_cache_ttl_seconds: float = 30
+    max_docs_per_user: int = 50
     cors_origins: str = "http://localhost:5173"
 
     @property

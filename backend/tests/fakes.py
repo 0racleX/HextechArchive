@@ -10,11 +10,20 @@ class FakeStore:
         self.docs: dict[str, dict] = {}
         self.chunks: dict[str, list[tuple[str, list[float]]]] = {}
 
-    def create_document(self, user_id, name, type_):
+    def create_document(self, user_id, name, type_, content_hash=None):
         doc_id = str(uuid.uuid4())
         self.docs[doc_id] = {"user_id": user_id, "name": name, "type": type_,
-                             "status": "processing", "error": None}
+                             "status": "processing", "error": None, "content_hash": content_hash}
         return doc_id
+
+    def find_by_hash(self, user_id, content_hash):
+        for d in self.docs.values():
+            if d["user_id"] == user_id and d.get("content_hash") == content_hash and d["status"] != "error":
+                return d["name"]
+        return None
+
+    def count_user_documents(self, user_id):
+        return sum(1 for d in self.docs.values() if d["user_id"] == user_id)
 
     def set_status(self, document_id, status, error=None):
         self.docs[document_id].update(status=status, error=error)

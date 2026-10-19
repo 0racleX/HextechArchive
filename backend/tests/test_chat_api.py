@@ -248,3 +248,51 @@ def test_history_saver_stores_the_original_question_for_random_requests():
         "original_question": "Cuéntame la historia de algún campeón", "answer": "Zed...", "sources": [], "refused": False,
     })
     assert h.msgs[cid][0]["content"] == "Cuéntame la historia de algún campeón"
+
+
+def test_chat_rate_limit_per_user_returns_429(client, history):
+    from app.config import Settings, get_settings
+    from tests.conftest import SECRET
+    app.dependency_overrides[get_settings] = lambda: Settings(
+        _env_file=None, supabase_jwt_secret=SECRET, supabase_jwks_url="", rate_limit_chat_per_min=2)
+    install_agent(history, FakeLLM(["OTRO", "OTRO"] * 4), [])
+    for _ in range(2):
+        assert client.post("/chat", json={"question": "¿Receta de sushi?"}, headers=headers()).status_code == 200
+    r = client.post("/chat", json={"question": "¿Receta de sushi?"}, headers=headers())
+    assert r.status_code == 429
+    assert "Demasiadas" in r.json()["detail"] and int(r.headers["Retry-After"]) >= 1
+    assert client.post("/chat", json={"question": "¿Receta de sushi?"}, headers=headers("user-b")).status_code == 200
+
+
+def test_closing_stream_closes_agent_generator(history):
+    import threading
+    import time
+
+    from app.controllers.chat import ChatRequest, _event_stream
+    from app.security.auth import CurrentUser
+
+    closed = threading.Event()
+    produced = []
+
+    class EndlessAgent:
+        def stream(self, init, stream_mode):
+            def gen():
+                try:
+                    i = 0
+                    while True:
+                        i += 1
+                        produced.append(i)
+                        yield ("custom", {"token": "x"})
+                        time.sleep(0.01)
+                finally:
+                    closed.set()
+            return gen()
+
+    cid = history.create_conversation("user-a", "t")
+    events = _event_stream(ChatRequest(question="hola"), CurrentUser(id="user-a", email=None), EndlessAgent(), history, cid, False)
+    assert next(events).startswith("data: ")
+    events.close()  # el cliente se desconecta
+    assert closed.wait(5), "el generador del agente no se cerró"
+    n = len(produced)
+    time.sleep(0.2)
+    assert len(produced) <= n + 1
