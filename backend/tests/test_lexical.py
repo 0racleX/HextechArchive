@@ -399,4 +399,7 @@ def test_known_limitation_off_topic_with_two_shared_words():
 
 @pytest.mark.xfail(strict=True, reason="falso aceptado al mezclar documentos: 'prepara' (Hwei) y 'viento' (Yasuo)")
 def test_known_limitation_mixed_context_from_unrelated_documents():
-    assert _grade_all("¿Cómo se prepara el viento?") is False
+    # demo_docs/*.md está en .gitignore (no existe en la CI): el fragmento de Hwei va en línea
+    hwei = "Hwei prepara a los campeones enemigos que daña con sus habilidades para darles su toque final."
+    text = f"Hwei.md {hwei} Yasuo.md {LORE['Yasuo']}"
+    assert _cm("¿Cómo se prepara el viento?", text, names=["Hwei.md", "Yasuo.md"]) is False
