@@ -21,7 +21,7 @@ _FUNCTION_WORDS = {
     "una", "uno", "unos", "unas", "y", "ya", "yo", "mejor", "peor", "puede", "pueden", "puedes", "dime", "dame",
     "hablame", "cuentame", "explicame", "explica", "cuenta", "habla", "quiero", "saber", "conocer", "decir",
     "mucho", "poco", "tambien", "cada", "todo", "todos", "toda", "todas", "algunos", "algunas", "del", "ver",
-    "sabes", "dices", "puedo", "dar", "hacer",
+    "sabes", "dices", "puedo", "dar", "hacer", "segun",
     # verbos de petición ("¿qué puedes decirme de Jinx?")
     "decirme", "decirnos", "contarme", "contar", "mencionar", "menciona", "mencioname", "comentar", "comentame",
     "resumir", "resumeme", "explicar", "explicarme", "describe", "describir", "descripcion", "conoces",
@@ -113,20 +113,106 @@ def term_match_level(q: str, n: str) -> int:
     return 0
 
 
+# Palabras funcionales en inglés: el corpus está en español, así que en una pregunta en inglés solo cuentan
+# los nombres y los términos de contenido (traducidos con `_EN_TO_ES`). Solo se usan en `context_matches`.
+_EN_FUNCTION_WORDS = {
+    "who", "whom", "whose", "what", "which", "where", "when", "why", "how", "is", "are", "was", "were", "be",
+    "been", "being", "am", "the", "an", "of", "in", "on", "at", "to", "for", "from", "with", "by", "about",
+    "into", "does", "do", "did", "has", "have", "had", "his", "her", "hers", "him", "its", "it", "their",
+    "they", "them", "he", "she", "you", "your", "my", "and", "or", "not", "this", "that", "these", "those",
+    "there", "any", "some", "much", "many", "more", "most", "tell", "explain", "describe", "give", "show",
+    "know", "can", "could", "would", "should", "will", "us", "lore", "story", "backstory", "history",
+    "champion", "champions", "character", "info", "information", "like", "really", "also",
+    # equivalentes de `_CORPUS_GENERIC`: aparecen en casi todas las fichas y no distinguen un tema
+    "ability", "abilities", "skill", "skills", "passive", "role", "roles", "tips", "origin", "play", "against",
+    "face", "counter", "beat",
+}
+
+# Equivalencias inglés -> español para el vocabulario del lore (la pregunta se compara con texto en español).
+_EN_TO_ES = {
+    "weapon": "arma", "weapons": "armas", "brother": "hermano", "brothers": "hermanos", "sister": "hermana",
+    "sisters": "hermanas", "sibling": "hermano", "siblings": "hermanos", "adopted": "adopto", "adopt": "adopto",
+    "father": "padre", "mother": "madre", "family": "familia", "friend": "amigo", "friends": "amigos",
+    "magic": "magia", "mage": "maga", "forbidden": "prohibida", "banned": "prohibida", "gauntlets": "guanteletes",
+    "gauntlet": "guantelete", "sword": "espada", "axe": "hacha", "wind": "viento", "light": "luz",
+    "master": "maestro", "teacher": "maestro", "killed": "mato", "kill": "mato", "murdered": "asesinado",
+    "murder": "asesinato", "unforgiven": "imperdonable", "hand": "mano", "empire": "imperio",
+    "prison": "prision", "jail": "prision", "city": "ciudad", "underground": "subterranea", "enemy": "enemigo",
+    "enemies": "enemigos", "ally": "aliada", "personality": "personalidad", "wall": "muralla",
+    "called": "llaman", "named": "llamado", "name": "nombre", "nickname": "alias", "use": "usa", "uses": "usa",
+    "fight": "pelea", "fights": "pelea", "younger": "menor", "older": "mayor",
+}
+
+# Sufijos flexivos del español (plurales, género, conjugaciones frecuentes), del más largo al más corto.
+_SUFFIXES = sorted({
+    "aciones", "iciones", "amiento", "imiento", "mente", "aban", "ados", "adas", "idos", "idas", "ando",
+    "iendo", "aron", "ieron", "aba", "ada", "ado", "ida", "ido", "ian", "ar", "er", "ir", "as", "os", "es",
+    "an", "en", "a", "o", "e", "s",
+}, key=len, reverse=True)
+_MIN_ROOT = 4
+
+
+def light_stem(token: str) -> str:
+    """Raíz aproximada: quita un sufijo flexivo ('hachas'->'hach', 'llamaba'->'llam', 'poderes'->'poder')
+    y recorta a 7 letras. Se aplica igual a la pregunta y al contexto, así que solo importa que sea estable."""
+    for suf in _SUFFIXES:
+        if token.endswith(suf) and len(token) - len(suf) >= _MIN_ROOT:
+            token = token[: -len(suf)]
+            break
+    return stem(token)
+
+
+# Erratas frente al texto: solo contra nombres propios del contexto (palabras en mayúscula), de 6+ letras,
+# con las dos primeras iguales y por una letra de más/de menos o dos letras traspuestas ('luxana' ~ 'Luxanna').
+# Se excluye la sustitución de una letra y las palabras comunes: 'recipe' ~ 'recibe' o 'unidos' ~ 'unicos'
+# convertían preguntas ajenas en aceptadas.
+_FUZZY_MIN_LEN = 6
+_PROPER = re.compile(r"\b[A-Z][A-Za-z0-9]*")
+
+
+def _proper_tokens(text: str) -> set[str]:
+    plain = "".join(ch for ch in unicodedata.normalize("NFD", text) if unicodedata.category(ch) != "Mn")
+    return {tok.lower() for tok in _PROPER.findall(plain) if len(tok) >= _FUZZY_MIN_LEN}
+
+
+def _is_typo(a: str, b: str) -> bool:
+    if a[:2] != b[:2] or a == b:
+        return False
+    if len(a) == len(b):
+        return sorted(a) == sorted(b) and _osa_distance(a, b) == 1  # trasposición
+    return abs(len(a) - len(b)) == 1 and _osa_distance(a, b) == 1     # letra de más o de menos
+
+
+def _fuzzy_in(term: str, proper_tokens: set[str]) -> bool:
+    return len(term) >= _FUZZY_MIN_LEN and any(_is_typo(term, tok) for tok in proper_tokens)
+
+
 def context_matches(question: str, context_text: str, min_ratio: float = MIN_MATCH_RATIO, names=()) -> bool:
     """True si al menos `min_ratio` de los términos significativos de la pregunta aparece en el contexto.
 
     `names` son los nombres de los documentos recuperados: permiten reconocer nombres parciales o con
     errores de escritura ('Kaiser' -> 'Mordekaiser.md').
+
+    Un término coincide si (en este orden): su prefijo de 7 letras está en el contexto; su raíz sin sufijo
+    flexivo coincide con la de alguna palabra del contexto (plurales, género, conjugaciones); su traducción
+    al español (`_EN_TO_ES`) coincide; es una errata de un nombre propio del contexto (`_fuzzy_in`); o
+    coincide con el nombre de un documento recuperado. Las palabras funcionales en inglés no cuentan.
     """
-    terms = _significant_tokens(question)
+    terms = [t for t in _significant_tokens(question) if t not in _EN_FUNCTION_WORDS]
     if not terms:
         return False
-    context_stems = {stem(tok) for tok in _TOKEN.findall(normalize(context_text))}
+    context_tokens = set(_TOKEN.findall(normalize(context_text)))
+    context_stems = {stem(tok) for tok in context_tokens}
+    context_roots = {light_stem(tok) for tok in context_tokens}
+    proper_tokens = _proper_tokens(context_text)
     name_tokens = [tok for nm in names for tok in _TOKEN.findall(normalize(nm)) if tok not in _NAME_NOISE]
     matched = 0
     for term in terms:
-        if stem(term) in context_stems or any(term_match_level(term, nt) for nt in name_tokens):
+        variants = [term] + ([_EN_TO_ES[term]] if term in _EN_TO_ES else [])
+        if any(
+            stem(v) in context_stems or light_stem(v) in context_roots or _fuzzy_in(v, proper_tokens)
+            for v in variants
+        ) or any(term_match_level(term, nt) for nt in name_tokens):
             matched += 1
     return matched / len(terms) >= min_ratio
 

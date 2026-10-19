@@ -10,13 +10,27 @@ QUESTIONS = Path(__file__).parent / "eval" / "questions.json"
 
 def test_questions_file_is_well_formed():
     rows = json.loads(QUESTIONS.read_text(encoding="utf-8"))
-    assert len(rows) == 20
+    assert len(rows) == 55
     for item in rows:
+        assert set(item) == {"q", "expect"}
         assert isinstance(item["q"], str) and item["q"].strip()
         assert item["expect"] in {"answer", "refuse"}
     assert {r["expect"] for r in rows} == {"answer", "refuse"}
     qs = [r["q"] for r in rows]
     assert len(qs) == len(set(qs))
+
+
+def test_questions_cover_english_typos_and_traps():
+    rows = json.loads(QUESTIONS.read_text(encoding="utf-8"))
+    by_q = {r["q"]: r["expect"] for r in rows}
+    english = [q for q in by_q if q.split()[0] in {"Who", "What", "Tell", "How", "Write", "Recipe"}]
+    assert {by_q[q] for q in english} == {"answer", "refuse"}  # inglés en ambos sentidos
+    assert sum(r["expect"] == "refuse" for r in rows) >= 20
+    # trampas: comparten el nombre de un campeón pero son ajenas al lore
+    for trap in ("¿Quién ganó el mundial de fútbol de Jinx?", "Dame la receta de Darius", "Recipe for Lux's cake"):
+        assert by_q[trap] == "refuse"
+    for typo in ("quien es jinks", "historia de yasou", "quien es luxana"):
+        assert by_q[typo] == "answer"
 
 
 def test_score_counts_matches():
