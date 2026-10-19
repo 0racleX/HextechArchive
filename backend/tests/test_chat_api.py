@@ -87,13 +87,13 @@ def test_chat_streams_tokens_and_final_and_persists(client, history):
 
 
 def test_chat_refusal_is_flagged(client, history):
-    install_agent(history, FakeLLM(), [])
+    install_agent(history, FakeLLM(["OTRO", "OTRO"]), [])
     final = sse_events(client.post("/chat", json={"question": "¿Receta de sushi?"}, headers=headers()))[-1]
     assert final["refused"] is True and "No tengo suficiente información" in final["answer"]
 
 
 def test_chat_continues_existing_conversation(client, history):
-    install_agent(history, FakeLLM(), [])
+    install_agent(history, FakeLLM(["OTRO", "OTRO"]), [])
     first = sse_events(client.post("/chat", json={"question": "¿Receta de sushi?"}, headers=headers()))[-1]
     cid = first["conversation_id"]
     second = sse_events(client.post("/chat", json={"question": "¿Otra receta?", "conversation_id": cid},
@@ -103,7 +103,7 @@ def test_chat_continues_existing_conversation(client, history):
 
 
 def test_cannot_use_foreign_conversation(client, history):
-    install_agent(history, FakeLLM(), [])
+    install_agent(history, FakeLLM(["OTRO", "OTRO"]), [])
     cid = history.create_conversation("user-a", "privada")
     r = client.post("/chat", json={"question": "¿Hola qué tal?", "conversation_id": cid}, headers=headers("user-b"))
     assert r.status_code == 404
@@ -113,7 +113,7 @@ def test_cannot_use_foreign_conversation(client, history):
 
 @pytest.mark.parametrize("body", [{"question": ""}, {"question": "x" * 1001}, {}])
 def test_invalid_question_payload_is_422(client, history, body):
-    install_agent(history, FakeLLM(), [])
+    install_agent(history, FakeLLM(["OTRO", "OTRO"]), [])
     assert client.post("/chat", json=body, headers=headers()).status_code == 422
 
 
@@ -135,7 +135,7 @@ def test_ollama_down_emits_friendly_error_event(client, history):
 
 
 def test_history_endpoints_return_messages(client, history):
-    install_agent(history, FakeLLM(), [])
+    install_agent(history, FakeLLM(["OTRO", "OTRO"]), [])
     cid = sse_events(client.post("/chat", json={"question": "¿Receta de sushi?"}, headers=headers()))[-1]["conversation_id"]
     listing = client.get("/conversations", headers=headers()).json()
     assert [c["id"] for c in listing] == [cid]
@@ -238,3 +238,13 @@ def test_client_disconnect_stops_worker_thread(history):
     while threading.active_count() >= before and time.time() < deadline:
         time.sleep(0.05)
     assert threading.active_count() < before
+
+
+def test_history_saver_stores_the_original_question_for_random_requests():
+    h = FakeHistory()
+    cid = h.create_conversation("user-a", "t")
+    make_history_saver(h)({
+        "conversation_id": cid, "question": "Cuéntame la historia de Zed.",
+        "original_question": "Cuéntame la historia de algún campeón", "answer": "Zed...", "sources": [], "refused": False,
+    })
+    assert h.msgs[cid][0]["content"] == "Cuéntame la historia de algún campeón"

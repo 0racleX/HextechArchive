@@ -41,5 +41,13 @@ def get_ingestion() -> IngestionService:
 @lru_cache
 def get_agent():
     s = get_settings()
-    retriever = build_retriever(get_vector_store(), get_embedder(), s.top_k)
-    return build_graph(retriever, build_llm(s), make_history_saver(get_history_store()), s.similarity_threshold)
+    store = get_vector_store()
+    retriever = build_retriever(store, get_embedder(), s.top_k)
+
+    def catalog(user_id: str) -> list[str]:
+        """Nombres de los documentos listos que el usuario puede ver (corpus compartido + los suyos)."""
+        return [d.name for d in store.list_documents(user_id) if d.status == "ready"]
+
+    return build_graph(
+        retriever, build_llm(s), make_history_saver(get_history_store()), s.similarity_threshold, catalog=catalog,
+    )

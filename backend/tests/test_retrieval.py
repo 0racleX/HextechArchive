@@ -64,3 +64,25 @@ def test_documents_not_ready_are_never_used():
     store = Store(GENERAL, BRIAR, [rec("p", "Briar.md", status="processing")])
     out = build_retriever(store, Emb(), top_k=5)("quien es briar", "u1")
     assert out == GENERAL
+
+
+def test_partial_name_finds_the_document():
+    docs = [rec("m", "Mordekaiser.md"), rec("z", "Zed.md")]
+    store = Store(GENERAL, [rc("m", "Mordekaiser.md", "## Historia", 0.7)], docs)
+    out = build_retriever(store, Emb(), top_k=5)("Cuál es la historia de Kaiser?", "u1")
+    assert out[0].document_id == "m"
+    assert ("search_documents", "u1", ("m",), 3) in store.calls
+
+
+def test_exact_name_wins_over_fuzzy_neighbours():
+    docs = [rec("a", "Sona.md"), rec("b", "Sion.md")]
+    store = Store(GENERAL, [rc("a", "Sona.md", "x", 0.7), rc("b", "Sion.md", "y", 0.7)], docs)
+    build_retriever(store, Emb(), top_k=5)("quien es sona", "u1")
+    assert ("search_documents", "u1", ("a",), 3) in store.calls
+
+
+def test_misspelled_name_still_resolves_when_nothing_matches_exactly():
+    docs = [rec("j", "Jinx.md"), rec("z", "Zed.md")]
+    store = Store(GENERAL, [rc("j", "Jinx.md", "x", 0.7)], docs)
+    build_retriever(store, Emb(), top_k=5)("quien es jinks", "u1")
+    assert ("search_documents", "u1", ("j",), 3) in store.calls

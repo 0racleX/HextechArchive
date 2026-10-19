@@ -105,3 +105,98 @@ def test_help_requests_are_detected(text):
 ])
 def test_questions_about_entities_are_not_help_requests(text):
     assert is_help_request(text) is False
+
+
+from app.agents.lexical import detect_catalog_request, is_greeting, is_smalltalk  # noqa: E402
+
+
+@pytest.mark.parametrize("text", [
+    "Hola", "holi", "Holiwi", "Olaa", "Holaaa", "ola", "Buen día", "Buenos días!", "Buenas tardes", "buenas noches",
+    "Hello", "hey", "hi", "Ey", "Saludos", "wenas", "Hola, buenas",
+])
+def test_greetings_are_recognized_by_similarity(text):
+    assert is_greeting(text) is True
+
+
+@pytest.mark.parametrize("text", [
+    "¿Quién es Jinx?", "Hola Jinx", "Odio lol", "Bonito dia", "Como estas?", "Cuéntame la historia de Zed",
+    "Hola, ¿qué es Demacia?", "Jax", "Lux", "Zed",
+])
+def test_non_greetings_are_not_swallowed(text):
+    assert is_greeting(text) is False
+
+
+@pytest.mark.parametrize("text", [
+    "¿Cómo estás?", "Como estas?", "Que tal", "Bonito dia", "Qué lindo día", "Gracias", "Muchas gracias",
+    "Adiós", "Hasta luego", "jajaja", "ok", "Genial", "todo bien",
+])
+def test_smalltalk_is_recognized(text):
+    assert is_smalltalk(text) is True
+
+
+@pytest.mark.parametrize("text", [
+    "¿Cómo estás de Jinx?", "¿Qué tal es Zed?", "Gracias por la historia de Lux, ¿y Vi?", "¿Quién es Jinx?", "masa del sol",
+])
+def test_smalltalk_does_not_hijack_real_questions(text):
+    assert is_smalltalk(text) is False
+
+
+@pytest.mark.parametrize("text,kind", [
+    ("Cuéntame la historia de algún campeón", "random_story"),
+    ("cuentame una historia al azar", "random_story"),
+    ("Dime un dato curioso", "random_fact"),
+    ("¿Tienes alguna curiosidad?", "random_fact"),
+    ("sorpréndeme con algo interesante", "random_fact"),
+    ("Háblame de alguna región", "random_story"),
+])
+def test_random_requests_are_detected(text, kind):
+    req = detect_catalog_request(text)
+    assert req is not None and req["kind"] == kind
+
+
+def test_random_region_request_targets_regions():
+    assert detect_catalog_request("Cuéntame de alguna región")["subject"] == "region"
+    assert detect_catalog_request("Cuéntame de algún campeón")["subject"] == "champion"
+
+
+@pytest.mark.parametrize("text", [
+    "Dime un dato curioso de Jinx", "Cuéntame la historia de Zed", "¿Quién es Jinx?", "Dato curioso sobre Demacia",
+])
+def test_requests_that_name_an_entity_are_not_random(text):
+    assert detect_catalog_request(text) is None
+
+
+@pytest.mark.parametrize("text,letter", [
+    ("Nombres de campeones por K", "k"), ("campeones que empiezan con la letra z", "z"),
+    ("lista de campeones con A", "a"), ("¿Qué campeones empiezan por M?", "m"),
+])
+def test_champion_list_by_letter(text, letter):
+    req = detect_catalog_request(text)
+    assert req == {"kind": "list", "subject": "champion", "letter": letter}
+
+
+def test_list_and_count_requests():
+    assert detect_catalog_request("¿Cuántos campeones hay?")["kind"] == "count"
+    assert detect_catalog_request("¿Qué regiones hay?") == {"kind": "list", "subject": "region", "letter": None}
+    assert detect_catalog_request("lista de campeones")["kind"] == "list"
+
+
+from app.agents.lexical import context_matches as _cm, document_matches_question as _dm  # noqa: E402
+
+
+@pytest.mark.parametrize("doc,question,expected", [
+    ("Mordekaiser.md", "Cuál es la historia de Kaiser?", True),     # parte del nombre
+    ("Jinx.md", "quien es jinks", True),                             # error de escritura
+    ("Aurelion Sol.md", "háblame de aurelion", False),                # falta 'sol'
+    ("Zed.md", "que es zona", False),                                 # no confundir palabras cortas
+    ("KogMaw.md", "quien es kog maw", False),                         # (limitación conocida)
+    ("Briar.md", "quien es brair", True),
+])
+def test_fuzzy_document_matching(doc, question, expected):
+    assert _dm(doc, question) is expected
+
+
+def test_context_matches_accepts_partial_and_misspelled_names():
+    assert _cm("historia de Kaiser", "Mordekaiser.md # Mordekaiser, el Renacido", names=["Mordekaiser.md"]) is True
+    assert _cm("quien es jinks", "Jinx.md # Jinx, el Gatillo Alegre", names=["Jinx.md"]) is True
+    assert _cm("quien es sushi", "Jinx.md # Jinx, el Gatillo Alegre", names=["Jinx.md"]) is False
